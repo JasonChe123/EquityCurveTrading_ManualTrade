@@ -1,0 +1,4 @@
+ibapi==9.81.1.post1
+matplotlib>=3.5.0
+pywinauto>=0.6.8
+MetaTrader5>=5.0.45
