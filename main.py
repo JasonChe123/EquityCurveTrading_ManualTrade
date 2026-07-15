@@ -344,6 +344,7 @@ class MT5ConnectionApp:
         tp_points: float,
         sl_points: float,
     ) -> int:
+        return 1
         if not self.connected:
             raise RuntimeError("MT5 is not connected")
         if volume <= 0:
@@ -388,6 +389,7 @@ class MT5ConnectionApp:
         return int(result.order)
 
     def close_position(self, symbol: str) -> int:
+        return 1
         if not self.connected:
             raise RuntimeError("MT5 is not connected")
         self._ensure_symbol(symbol)
@@ -544,6 +546,12 @@ class TradingGUI:
         self.atr_display_var = tk.StringVar(value="ATR: --")
         self.open_positions = []
         self.position_dropdown_vars = {}
+        self.browser_app = None
+        self.browser_window = None
+        self.browser_connected = False
+        self.browser_name = ""
+        self._browser_check_counter = 0
+        self.reconnect_browser_button = None
 
         self._init_trade_record()
         self._init_chart()
@@ -582,42 +590,27 @@ class TradingGUI:
 
         button_row = ttk.Frame(main)
         button_row.grid(row=3, column=0, columnspan=6, sticky="we", pady=(12, 8))
-        tk.Button(
+        ttk.Button(
             button_row,
             text="Buy",
             command=lambda: self._send_order("BUY"),
-            bg="#1976d2",
-            fg="white",
-            activebackground="#1565c0",
-            activeforeground="white",
-            relief="flat",
-            padx=14,
-            pady=4,
         ).grid(row=0, column=0, padx=(0, 8))
-        tk.Button(
+        ttk.Button(
             button_row,
             text="Sell",
             command=lambda: self._send_order("SELL"),
-            bg="#d32f2f",
-            fg="white",
-            activebackground="#b71c1c",
-            activeforeground="white",
-            relief="flat",
-            padx=14,
-            pady=4,
         ).grid(row=0, column=1, padx=(0, 8))
-        tk.Button(
+        ttk.Button(
             button_row,
             text="Close All",
             command=self._close_all,
-            bg="#616161",
-            fg="white",
-            activebackground="#424242",
-            activeforeground="white",
-            relief="flat",
-            padx=14,
-            pady=4,
         ).grid(row=0, column=2)
+        self.reconnect_browser_button = ttk.Button(
+            button_row,
+            text="Reconnect Browser",
+            command=self._connect_browser,
+        )
+        self.reconnect_browser_button.grid(row=0, column=3, padx=(8, 0))
 
         ttk.Label(main, textvariable=self.atr_display_var).grid(row=4, column=0, columnspan=6, sticky="w", pady=(8, 0))
         ttk.Label(main, textvariable=self.demo_status_var).grid(row=5, column=0, columnspan=6, sticky="w", pady=(4, 0))
@@ -943,6 +936,161 @@ class TradingGUI:
                         row.get('result', '')
                     ))
 
+    def _check_tp_sl_hits(self, current_price: float) -> list[dict]:
+        """Check if current price hits TP/SL for any open positions."""
+        hit_positions = []
+        
+        for position in self.open_positions:
+            try:
+                tp = float(position.get('take_profit', 0))
+                sl = float(position.get('stoploss', 0))
+                side = position.get('side', '')
+                
+                if side == 'BUY':
+                    # For BUY: TP is above, SL is below
+                    if current_price >= tp:
+                        hit_positions.append((position, 'TP'))
+                    elif current_price <= sl:
+                        hit_positions.append((position, 'SL'))
+                elif side == 'SELL':
+                    # For SELL: TP is below, SL is above
+                    if current_price <= tp:
+                        hit_positions.append((position, 'TP'))
+                    elif current_price >= sl:
+                        hit_positions.append((position, 'SL'))
+            except (ValueError, TypeError):
+                continue
+        
+        return hit_positions
+
+    def _auto_update_position_result(self, position: dict, result: str) -> None:
+        """Auto-update the result for a position when TP/SL is hit."""
+        # Read all rows from CSV
+        rows = []
+        updated = False
+        
+        with open(self.trade_record_file, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames
+            for row in reader:
+                # Check if this row matches the position
+                if (row.get('date') == position.get('date') and 
+                    row.get('create_time') == position.get('create_time') and 
+                    row.get('ticker') == position.get('ticker') and 
+                    not row.get('result', '').strip()):
+                    
+                    # Update the result
+                    row['result'] = result
+                    
+                    # Calculate profit_loss
+                    open_price = float(row.get('open_price', 0))
+                    take_profit = float(row.get('take_profit', 0))
+                    stoploss = float(row.get('stoploss', 0))
+                    quantity = int(row.get('quantity', 0))
+                    side = row.get('side', '')
+                    multiplier = float(row.get('multiplier', 1))
+                    commission = float(row.get('commission', 0))
+                    
+                    if result == "TP":
+                        exit_price = take_profit
+                    else:  # SL
+                        exit_price = stoploss
+                    
+                    if side == "BUY":
+                        gross_profit = (exit_price - open_price) * quantity * multiplier
+                    else:  # SELL
+                        gross_profit = (open_price - exit_price) * quantity * multiplier
+                    
+                    profit_loss = gross_profit - commission
+                    row['profit_loss'] = round(profit_loss, 2)
+                    updated = True
+                
+                rows.append(row)
+        
+        if not updated:
+            return
+        
+        # Recalculate demo_value and 38_sma for all rows
+        cumulative = 0.0
+        demo_values = []
+        for row in rows:
+            profit_loss = row.get('profit_loss', 0)
+            if isinstance(profit_loss, str):
+                profit_loss = profit_loss.strip()
+            if profit_loss:
+                try:
+                    cumulative += float(profit_loss)
+                except (ValueError, TypeError):
+                    pass
+            row['demo_value'] = round(cumulative, 2)
+            demo_values.append(cumulative)
+        
+        # Calculate 38_sma for each row
+        for i, row in enumerate(rows):
+            if i >= 37:  # Need at least 38 data points (0-indexed)
+                row['38_sma'] = round(self._calculate_38_sma(demo_values[:i+1]), 2)
+        
+        # Calculate signal and is_trade for each row
+        signals = []
+        for i, row in enumerate(rows):
+            demo_value_str = row.get('demo_value', 0)
+            demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
+            sma_38_str = row.get('38_sma', 0)
+            sma_38 = float(sma_38_str) if sma_38_str and str(sma_38_str).strip() else 0.0
+            
+            # signal: 1 if demo_value > 38_sma, else 0
+            signal = 1 if demo_value > sma_38 else 0
+            row['signal'] = signal
+            signals.append(signal)
+            
+            # is_trade: 1 if previous signal is 1, else -1
+            if i == 0:
+                is_trade = -1  # No previous signal for first row
+            else:
+                is_trade = 1 if signals[i-1] == 1 else -1
+            row['is_trade'] = is_trade
+        
+        # Calculate equity_curve_trading_value for each row
+        equity_curve_value = 0.0
+        for i, row in enumerate(rows):
+            is_trade = int(row.get('is_trade', -1))
+            profit_loss_str = row.get('profit_loss', 0)
+            if isinstance(profit_loss_str, str):
+                profit_loss_str = profit_loss_str.strip()
+            profit_loss = float(profit_loss_str) if profit_loss_str else 0.0
+            commission_str = row.get('commission', 0)
+            if isinstance(commission_str, str):
+                commission_str = commission_str.strip()
+            commission = float(commission_str) if commission_str else 0.0
+            
+            if i == 0:
+                equity_curve_trading_value = 0.0  # First row starts at 0
+            else:
+                if is_trade == 1:
+                    equity_curve_trading_value = equity_curve_value + profit_loss
+                else:  # is_trade == -1
+                    equity_curve_trading_value = equity_curve_value - profit_loss - (2 * commission)
+            equity_curve_value = equity_curve_trading_value
+            row['equity_curve_trading_value'] = round(equity_curve_trading_value, 2)
+        
+        # Write updated rows back to CSV
+        with open(self.trade_record_file, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        
+        # Refresh the table
+        self._load_open_positions()
+        
+        # Update chart if window is open
+        if self.chart_window is not None and tk.Toplevel.winfo_exists(self.chart_window):
+            self.root.after(100, self._update_chart)
+        
+        # Update reverse order checkbox based on latest demo value vs 38 SMA
+        self._update_reverse_order_checkbox()
+        
+        print(f"Auto-updated position {position.get('ticker')} to {result}")
+
     def _update_selected_result(self) -> None:
         """Update the result column for the selected trade(s) in the CSV file."""
         selected_items = self.positions_tree.selection()
@@ -1161,6 +1309,9 @@ class TradingGUI:
             except Exception as exc:
                 messagebox.showwarning("MT5 connection", str(exc))
 
+        # Connect to browser after IB and MT5 are connected
+        self._connect_browser()
+
         self.contract = build_contract(self.config, self.symbol_var.get().strip() or self.config.symbol)
         self.app.request_positions(self.config.timeout)
         self.app.request_contract_min_tick(2002, self.contract, self.config.timeout)
@@ -1193,8 +1344,20 @@ class TradingGUI:
         if atr > 0 and close > 0:
             self.atr_display_var.set(f"Last close: {close:.2f}   ATR(14): {atr:.2f}   ATR x mult: {atr * atr_mult:.2f}")
             self.status_var.set("Live")
+            
+            # Check if current price hits TP/SL for any open positions
+            hit_positions = self._check_tp_sl_hits(close)
+            for position, result in hit_positions:
+                self._auto_update_position_result(position, result)
         else:
             self.atr_display_var.set("ATR: --")
+
+        # Check browser status every 1 minute (120 iterations of 500ms)
+        self._browser_check_counter += 1
+        if self._browser_check_counter >= 120:
+            self._browser_check_counter = 0
+            if self.browser_connected and not self._check_browser_status():
+                messagebox.showwarning("Browser Disconnected", "Browser has been closed. Please click 'Reconnect Browser' button to reconnect.")
 
         self.root.after(500, self._poll_status)
 
@@ -1217,36 +1380,115 @@ class TradingGUI:
             return last_close + distance_points, last_close - distance_points
         return last_close - distance_points, last_close + distance_points
 
+    def _connect_browser(self) -> None:
+        """Connect to browser (Firefox or Chrome) for tradovate.com automation."""
+        if not PYWINAUTO_AVAILABLE:
+            messagebox.showwarning("Browser Automation", "pywinauto library is not installed. Cannot connect to browser.")
+            return
+        
+        try:
+            # Try Firefox first
+            try:
+                app = pywinauto.Application(backend="uia").connect(title_re=".*Firefox.*", timeout=2)
+                browser = app.window(title_re=".*Firefox.*")
+                self.browser_app = app
+                self.browser_window = browser
+                self.browser_connected = True
+                self.browser_name = "Firefox"
+                self._update_browser_button_state()
+                print("Connected to Firefox browser")
+                messagebox.showinfo("Browser Connected", "Successfully connected to Firefox browser")
+                self.root.focus_force()
+                self.root.lift()
+                return
+            except:
+                pass
+
+            # Try Chrome if Firefox not found
+            try:
+                app = pywinauto.Application(backend="uia").connect(title_re=".*Chrome.*", timeout=2)
+                browser = app.window(title_re=".*Chrome.*")
+                self.browser_app = app
+                self.browser_window = browser
+                self.browser_connected = True
+                self.browser_name = "Chrome"
+                self._update_browser_button_state()
+                print("Connected to Chrome browser")
+                messagebox.showinfo("Browser Connected", "Successfully connected to Chrome browser")
+                self.root.focus_force()
+                self.root.lift()
+                return
+            except:
+                pass
+            
+            # Neither browser found
+            self.browser_connected = False
+            self.browser_app = None
+            self.browser_window = None
+            self.browser_name = ""
+            self._update_browser_button_state()
+            messagebox.showwarning("Browser Not Found", "Could not find Chrome or Firefox browser. Please ensure browser is running.")
+            self.root.focus_force()
+            self.root.lift()
+            
+        except Exception as e:
+            self.browser_connected = False
+            self.browser_app = None
+            self.browser_window = None
+            self.browser_name = ""
+            self._update_browser_button_state()
+            messagebox.showerror("Browser Connection Error", f"Error connecting to browser: {str(e)}")
+            self.root.focus_force()
+            self.root.lift()
+
+    def _update_browser_button_state(self) -> None:
+        """Update reconnect browser button state based on connection status."""
+        if self.reconnect_browser_button is None:
+            return
+        
+        if self.browser_connected:
+            self.reconnect_browser_button.config(text="Tradovate Connected", state="disabled")
+        else:
+            self.reconnect_browser_button.config(text="Reconnect Browser", state="normal")
+
+    def _check_browser_status(self) -> bool:
+        """Check if browser is still connected and running."""
+        if not self.browser_connected or self.browser_window is None:
+            return False
+        
+        try:
+            # Quick check if browser window still exists
+            exists = self.browser_window.exists()
+            if not exists:
+                self.browser_connected = False
+                self.browser_app = None
+                self.browser_window = None
+                self.browser_name = ""
+                self._update_browser_button_state()
+            return exists
+        except:
+            self.browser_connected = False
+            self.browser_app = None
+            self.browser_window = None
+            self.browser_name = ""
+            self._update_browser_button_state()
+            return False
+
     def _send_tradovate_shortcut(self, action: str) -> None:
         """Send keyboard shortcut to tradovate.com browser tab."""
         if not PYWINAUTO_AVAILABLE:
             messagebox.showwarning("Browser Automation", "pywinauto library is not installed. Cannot send keyboard shortcuts to tradovate.com")
             return
         
+        # Check if browser is still connected
+        if not self._check_browser_status():
+            messagebox.showwarning("Browser Disconnected", "Browser has been closed or is not connected. Please click 'Reconnect Browser' button.")
+            return
+        
         try:
-            # Try to find browser with tradovate.com tab (Chrome or Firefox)
-            browser = None
-            browser_name = None
-            
-            # If Firefox first
+            browser = self.browser_window
             if browser is None:
-                try:
-                    app = pywinauto.Application(backend="uia").connect(title_re=".*Firefox.*", timeout=2)
-                    browser = app.window(title_re=".*Firefox.*")
-                    browser_name = "Firefox"
-                except:
-                    pass
-
-            # If Firefox not found, try Chrome
-            try:
-                app = pywinauto.Application(backend="uia").connect(title_re=".*Chrome.*", timeout=2)
-                browser = app.window(title_re=".*Chrome.*")
-                browser_name = "Chrome"
-            except:
-                pass
-            
-            if browser is None:
-                messagebox.showwarning("Browser Not Found", "Could not find Chrome or Firefox browser with tradovate.com tab")
+                messagebox.showwarning("Browser Not Connected", "Browser connection is not available. Please click 'Reconnect Browser' button.")
                 return
             
             # Try to find the tab with tradovate.com
@@ -1258,7 +1500,7 @@ class TradingGUI:
                     break
             
             if not tradovate_found:
-                messagebox.showwarning("Tab Not Found", f"Could not find a tab with tradovate.com in {browser_name}")
+                messagebox.showwarning("Tab Not Found", f"Could not find a tab with tradovate.com in {self.browser_name}")
                 return
             
             # Determine which shortcut to send based on action and reverse order checkbox
@@ -1266,7 +1508,8 @@ class TradingGUI:
             
             if action == "BUY":
                 if reverse_order:
-                    send_keys("^%s")  # Ctrl+Alt+S
+                    # send_keys("^%s")  # Ctrl+Alt+S
+                    send_keys("^b")  # Ctrl+Alt+S
                 else:
                     send_keys("^%b")  # Ctrl+Alt+B
             else:  # SELL
