@@ -148,3 +148,9 @@ trade_record/
 
 # Logs
 *.log
+
+# Test/utility scripts
+generate_dummy_trades.py
+import_multicharts_trades.py
+test_mt5_connection.py
+test_pywinauto.py
