@@ -10,6 +10,8 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+import random
+import time
 
 try:
     import pywinauto
@@ -344,7 +346,6 @@ class MT5ConnectionApp:
         tp_points: float,
         sl_points: float,
     ) -> int:
-        return 1
         if not self.connected:
             raise RuntimeError("MT5 is not connected")
         if volume <= 0:
@@ -389,7 +390,6 @@ class MT5ConnectionApp:
         return int(result.order)
 
     def close_position(self, symbol: str) -> int:
-        return 1
         if not self.connected:
             raise RuntimeError("MT5 is not connected")
         self._ensure_symbol(symbol)
@@ -532,7 +532,7 @@ class TradingGUI:
         self.contract = build_contract(config, config.symbol)
 
         self.symbol_var = tk.StringVar(value=config.symbol)
-        if config.symbol == 'NQ':
+        if config.symbol in ('NQ', 'nq','MNQ', 'mnq'):
             self.mt5_symbol_var = tk.StringVar(value="NAS100_SB")
         else:
             self.mt5_symbol_var = tk.StringVar(value=config.symbol)
@@ -552,6 +552,11 @@ class TradingGUI:
         self.browser_name = ""
         self._browser_check_counter = 0
         self.reconnect_browser_button = None
+        self._startup_time = datetime.now()
+        self._allow_auto_update = False
+        self._cached_contract = None
+        self._cached_min_tick = None
+        self._cached_tradovate_tab = None
 
         self._init_trade_record()
         self._init_chart()
@@ -657,6 +662,11 @@ class TradingGUI:
         
         self.positions_tree.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="ns")
+        
+        # Add right-click context menu for copying cell values
+        self.context_menu = tk.Menu(self.root, tearoff=0)
+        self.context_menu.add_command(label="Copy", command=self._copy_cell_value)
+        self.positions_tree.bind("<Button-3>", self._show_context_menu)
         
         # Add dropdown for result selection
         self.result_var = tk.StringVar(value="")
@@ -965,6 +975,10 @@ class TradingGUI:
 
     def _auto_update_position_result(self, position: dict, result: str) -> None:
         """Auto-update the result for a position when TP/SL is hit."""
+        # Only allow auto-update after startup to avoid unrealistic updates from historical data
+        if not self._allow_auto_update:
+            return
+        
         # Read all rows from CSV
         rows = []
         updated = False
@@ -1090,6 +1104,33 @@ class TradingGUI:
         self._update_reverse_order_checkbox()
         
         print(f"Auto-updated position {position.get('ticker')} to {result}")
+
+    def _show_context_menu(self, event) -> None:
+        """Show context menu when right-clicking on a cell."""
+        # Select the item under the cursor
+        item = self.positions_tree.identify_row(event.y)
+        if item:
+            self.positions_tree.selection_set(item)
+            self.context_menu.post(event.x_root, event.y_root)
+
+    def _copy_cell_value(self) -> None:
+        """Copy the value of the selected cell to clipboard."""
+        selected_items = self.positions_tree.selection()
+        if not selected_items:
+            return
+        
+        item = selected_items[0]
+        values = self.positions_tree.item(item)['values']
+        
+        # Get the column that was clicked
+        column = self.positions_tree.identify_column(self.positions_tree.winfo_pointerx() - self.positions_tree.winfo_rootx())
+        if column:
+            col_index = int(column[1:]) - 1  # Convert '#1' to 0, '#2' to 1, etc.
+            if 0 <= col_index < len(values):
+                value = str(values[col_index])
+                self.root.clipboard_clear()
+                self.root.clipboard_append(value)
+                print(f"Copied to clipboard: {value}")
 
     def _update_selected_result(self) -> None:
         """Update the result column for the selected trade(s) in the CSV file."""
@@ -1260,13 +1301,17 @@ class TradingGUI:
             # Rebuild contract with new symbol
             self.contract = build_contract(self.config, symbol)
             
+            # Request min tick and cache it
+            min_tick = self.app.request_contract_min_tick(2002, self.contract, self.config.timeout)
+            self._cached_contract = self.contract
+            self._cached_min_tick = min_tick
+            
             # Clear existing bars
             self.app._bars = []
             self.app._last_atr = 0.0
             self.app._last_close = 0.0
             
             # Request new contract details and historical data
-            self.app.request_contract_min_tick(2002, self.contract, self.config.timeout)
             print(
                 f"Updated contract: symbol={self.contract.symbol} secType={self.contract.secType} "
                 f"expiry={self.contract.lastTradeDateOrContractMonth}"
@@ -1314,7 +1359,9 @@ class TradingGUI:
 
         self.contract = build_contract(self.config, self.symbol_var.get().strip() or self.config.symbol)
         self.app.request_positions(self.config.timeout)
-        self.app.request_contract_min_tick(2002, self.contract, self.config.timeout)
+        min_tick = self.app.request_contract_min_tick(2002, self.contract, self.config.timeout)
+        self._cached_contract = self.contract
+        self._cached_min_tick = min_tick
         print(
             f"Resolved contract: symbol={self.contract.symbol} secType={self.contract.secType} "
             f"expiry={self.contract.lastTradeDateOrContractMonth}"
@@ -1340,6 +1387,10 @@ class TradingGUI:
             atr_mult = float(self.atr_var.get())
         except ValueError:
             atr_mult = 0.0
+
+        # Enable auto-update after 30 seconds from startup to avoid unrealistic updates from historical data
+        if not self._allow_auto_update and (datetime.now() - self._startup_time).total_seconds() > 30:
+            self._allow_auto_update = True
 
         if atr > 0 and close > 0:
             self.atr_display_var.set(f"Last close: {close:.2f}   ATR(14): {atr:.2f}   ATR x mult: {atr * atr_mult:.2f}")
@@ -1422,24 +1473,25 @@ class TradingGUI:
                 pass
             
             # Neither browser found
-            self.browser_connected = False
-            self.browser_app = None
-            self.browser_window = None
-            self.browser_name = ""
-            self._update_browser_button_state()
+            self._disconnect_browser()
             messagebox.showwarning("Browser Not Found", "Could not find Chrome or Firefox browser. Please ensure browser is running.")
             self.root.focus_force()
             self.root.lift()
             
         except Exception as e:
-            self.browser_connected = False
-            self.browser_app = None
-            self.browser_window = None
-            self.browser_name = ""
-            self._update_browser_button_state()
+            self._disconnect_browser()
             messagebox.showerror("Browser Connection Error", f"Error connecting to browser: {str(e)}")
             self.root.focus_force()
             self.root.lift()
+
+    def _disconnect_browser(self) -> None:
+        """Clear browser connection state and cached references."""
+        self.browser_connected = False
+        self.browser_app = None
+        self.browser_window = None
+        self.browser_name = ""
+        self._cached_tradovate_tab = None
+        self._update_browser_button_state()
 
     def _update_browser_button_state(self) -> None:
         """Update reconnect browser button state based on connection status."""
@@ -1460,19 +1512,20 @@ class TradingGUI:
             # Quick check if browser window still exists
             exists = self.browser_window.exists()
             if not exists:
-                self.browser_connected = False
-                self.browser_app = None
-                self.browser_window = None
-                self.browser_name = ""
-                self._update_browser_button_state()
+                self._disconnect_browser()
             return exists
         except:
-            self.browser_connected = False
-            self.browser_app = None
-            self.browser_window = None
-            self.browser_name = ""
-            self._update_browser_button_state()
+            self._disconnect_browser()
             return False
+
+    def _find_tradovate_tab(self, browser) -> object | None:
+        """Find the tradovate.com tab in browser descendants."""
+        start = time.time()
+        for child in browser.descendants():
+            if hasattr(child, 'window_text') and 'tradovate.com' in child.window_text().lower():
+                print(f"find tradovate tab time: {round(time.time() - start, 2)}")
+                return child
+        return None
 
     def _send_tradovate_shortcut(self, action: str) -> None:
         """Send keyboard shortcut to tradovate.com browser tab."""
@@ -1491,33 +1544,38 @@ class TradingGUI:
                 messagebox.showwarning("Browser Not Connected", "Browser connection is not available. Please click 'Reconnect Browser' button.")
                 return
             
-            # Try to find the tab with tradovate.com
-            tradovate_found = False
-            for child in browser.descendants():
-                if hasattr(child, 'window_text') and 'tradovate.com' in child.window_text().lower():
-                    child.set_focus()
-                    tradovate_found = True
-                    break
+            # Try to find the tab with tradovate.com - use cached reference if available
+            tradovate_tab = self._cached_tradovate_tab
             
-            if not tradovate_found:
-                messagebox.showwarning("Tab Not Found", f"Could not find a tab with tradovate.com in {self.browser_name}")
-                return
+            # If no cached tab or cached tab is invalid, search for it
+            if tradovate_tab is None:
+                tradovate_tab = self._find_tradovate_tab(browser)
+                if tradovate_tab is None:
+                    messagebox.showwarning("Tab Not Found", f"Could not find a tab with tradovate.com in {self.browser_name}")
+                    return
+                self._cached_tradovate_tab = tradovate_tab
+            
+            # Set focus on the tradovate tab
+            try:
+                tradovate_tab.set_focus()
+                time.sleep(random.random()*0.2)
+                send_keys("{ESC}")
+            except:
+                # If cached tab is invalid, clear it and try to find again
+                self._cached_tradovate_tab = None
+                tradovate_tab = self._find_tradovate_tab(browser)
+                if tradovate_tab is None:
+                    messagebox.showwarning("Tab Not Found", f"Could not find a tab with tradovate.com in {self.browser_name}")
+                    return
+                self._cached_tradovate_tab = tradovate_tab
+                
+                tradovate_tab.set_focus()
+                time.sleep(random.random()*0.2)
+                send_keys("{ESC}")
             
             # Determine which shortcut to send based on action and reverse order checkbox
-            reverse_order = self.reverse_order_var.get()
-            
-            if action == "BUY":
-                if reverse_order:
-                    # send_keys("^%s")  # Ctrl+Alt+S
-                    send_keys("^b")  # Ctrl+Alt+S
-                else:
-                    send_keys("^%b")  # Ctrl+Alt+B
-            else:  # SELL
-                if reverse_order:
-                    send_keys("^%b")  # Ctrl+Alt+B
-                else:
-                    send_keys("^%s")  # Ctrl+Alt+S
-                    
+            send_keys("^%b") if action == "BUY" else send_keys("^%s")
+
         except Exception as e:
             messagebox.showwarning("Browser Automation Error", f"Could not send keyboard shortcut to tradovate.com: {str(e)}")
 
@@ -1531,8 +1589,17 @@ class TradingGUI:
             mt5_symbol = self.mt5_symbol_var.get().strip()
             mt5_contract_size = float(self.mt5_contract_size_var.get())
             distance_points = self._bracket_distance_points(atr_mult)
-            self.contract = build_contract(self.config, symbol)
-            min_tick = self.app.request_contract_min_tick(2002, self.contract, self.config.timeout)
+            
+            # Use cached contract and min_tick if available, otherwise build and request
+            if self._cached_contract is None or self._cached_min_tick is None:
+                self.contract = build_contract(self.config, symbol)
+                min_tick = self.app.request_contract_min_tick(2002, self.contract, self.config.timeout)
+                self._cached_contract = self.contract
+                self._cached_min_tick = min_tick
+            else:
+                self.contract = self._cached_contract
+                min_tick = self._cached_min_tick
+            
             take_profit, stop_loss = self._ib_bracket_prices(action, distance_points)
             take_profit = round(take_profit / min_tick) * min_tick
             stop_loss = round(stop_loss / min_tick) * min_tick
@@ -1546,16 +1613,6 @@ class TradingGUI:
                     f"Executed: {demo_price:.2f} | TP: {take_profit:.2f} | SL: {stop_loss:.2f}"
                 )
                 status.append("DEMO MODE")
-                self._record_trade(
-                    ticker=symbol,
-                    open_price=demo_price,
-                    take_profit=take_profit,
-                    stoploss=stop_loss,
-                    quantity=quantity,
-                    side=action,
-                    demo_value="DEMO",
-                    remark="Demo trade"
-                )
             else:
                 self.demo_status_var.set("")
                 order_id = self.app.place_bracket_market_order(
@@ -1566,16 +1623,6 @@ class TradingGUI:
                     stop_loss,
                 )
                 status.append(f"IB #{order_id}")
-                self._record_trade(
-                    ticker=symbol,
-                    open_price=self.app.last_close,
-                    take_profit=take_profit,
-                    stoploss=stop_loss,
-                    quantity=quantity,
-                    side=action,
-                    demo_value="LIVE",
-                    remark=f"IB order #{order_id}"
-                )
             
             if self.mt5_app.available and self.mt5_app.connected:
                 if self.reverse_order_var.get():
@@ -1593,7 +1640,21 @@ class TradingGUI:
                 status.append(f"MT5 #{mt5_order_id} ({mt5_action})")
                 
                 # Send keyboard shortcut to tradovate.com after MT5 order
-                self._send_tradovate_shortcut(action)
+                self._send_tradovate_shortcut(mt5_action)
+            
+            # Record trade once after all orders are sent
+            if not self.demo_trade_var.get():
+                remark = ", ".join(status)
+                self._record_trade(
+                    ticker=symbol,
+                    open_price=self.app.last_close,
+                    take_profit=take_profit,
+                    stoploss=stop_loss,
+                    quantity=quantity,
+                    side=action,
+                    demo_value="LIVE",
+                    remark=remark
+                )
                 
             self.status_var.set(f"Sent {action} bracket order: " + ", ".join(status))
         except Exception as exc:
