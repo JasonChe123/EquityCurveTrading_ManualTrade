@@ -726,6 +726,7 @@ class TradingGUI:
             reader = csv.DictReader(f)
             for row in reader:
                 date_str = row.get('date', '')
+                time_str = row.get('create_time', '')
                 demo_value_str = row.get('demo_value', '0')
                 sma_38_str = row.get('38_sma', '0')
                 equity_curve_str = row.get('equity_curve_trading_value', '0')
@@ -739,7 +740,12 @@ class TradingGUI:
                     continue
                 
                 try:
-                    trade_date = datetime.strptime(str(date_str).strip(), '%Y-%m-%d')
+                    date_part = str(date_str).strip()
+                    time_part = str(time_str).strip() if time_str else ''
+                    if time_part:
+                        trade_date = datetime.strptime(f"{date_part} {time_part}", '%Y-%m-%d %H:%M:%S')
+                    else:
+                        trade_date = datetime.strptime(date_part, '%Y-%m-%d')
                 except ValueError:
                     continue
                 
