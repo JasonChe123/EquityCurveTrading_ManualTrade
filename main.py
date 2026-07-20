@@ -754,7 +754,7 @@ class TradingGUI:
             self.chart_ax.plot(x, demo_values, label='Demo Value (Cumulative P/L)', color='blue', linewidth=2)
         
         if sma_38_values:
-            self.chart_ax.plot(x, sma_38_values, label='38 SMA', color='orange', linewidth=2, linestyle='--')
+            self.chart_ax.plot(x, sma_38_values, label='38 SMA', color='orange', linewidth=2)
         
         if equity_curve_values:
             self.chart_ax.plot(x, equity_curve_values, label='Equity Curve Trading Value', color='green', linewidth=2)
