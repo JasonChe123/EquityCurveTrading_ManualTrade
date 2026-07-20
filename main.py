@@ -10,6 +10,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+import matplotlib.dates as mdates
 import random
 import time
 
@@ -691,7 +692,7 @@ class TradingGUI:
         self.chart_figure = Figure(figsize=(10, 6), dpi=100)
         self.chart_ax = self.chart_figure.add_subplot(111)
         self.chart_ax.set_title("Equity Curve")
-        self.chart_ax.set_xlabel("Trade Number")
+        self.chart_ax.set_xlabel("Date")
         self.chart_ax.set_ylabel("Value")
         self.chart_ax.grid(True)
         self.chart_window = None
@@ -716,6 +717,7 @@ class TradingGUI:
             return
         
         # Load data from CSV - only include rows with valid calculated fields
+        dates = []
         demo_values = []
         sma_38_values = []
         equity_curve_values = []
@@ -723,20 +725,29 @@ class TradingGUI:
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
             for row in reader:
+                date_str = row.get('date', '')
                 demo_value_str = row.get('demo_value', '0')
                 sma_38_str = row.get('38_sma', '0')
                 equity_curve_str = row.get('equity_curve_trading_value', '0')
                 
                 # Skip rows where calculated fields are empty (newly opened trades)
+                if not date_str or not str(date_str).strip():
+                    continue
                 if not sma_38_str or not str(sma_38_str).strip():
                     continue
                 if not equity_curve_str or not str(equity_curve_str).strip():
+                    continue
+                
+                try:
+                    trade_date = datetime.strptime(str(date_str).strip(), '%Y-%m-%d')
+                except ValueError:
                     continue
                 
                 demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
                 sma_38 = float(sma_38_str) if sma_38_str and str(sma_38_str).strip() else 0.0
                 equity_curve = float(equity_curve_str) if equity_curve_str and str(equity_curve_str).strip() else 0.0
                 
+                dates.append(trade_date)
                 demo_values.append(demo_value)
                 sma_38_values.append(sma_38)
                 equity_curve_values.append(equity_curve)
@@ -744,20 +755,23 @@ class TradingGUI:
         # Clear and replot
         self.chart_ax.clear()
         self.chart_ax.set_title("Equity Curve")
-        self.chart_ax.set_xlabel("Trade Number")
+        self.chart_ax.set_xlabel("Date")
         self.chart_ax.set_ylabel("Value")
         self.chart_ax.grid(True)
         
-        x = range(len(demo_values))
-        
         if demo_values:
-            self.chart_ax.plot(x, demo_values, label='Demo Value (Cumulative P/L)', color='blue', linewidth=2)
+            self.chart_ax.plot(dates, demo_values, label='Demo Value (Cumulative P/L)', color='blue', linewidth=2)
         
         if sma_38_values:
-            self.chart_ax.plot(x, sma_38_values, label='38 SMA', color='orange', linewidth=2)
+            self.chart_ax.plot(dates, sma_38_values, label='38 SMA', color='orange', linewidth=2)
         
         if equity_curve_values:
-            self.chart_ax.plot(x, equity_curve_values, label='Equity Curve Trading Value', color='green', linewidth=2)
+            self.chart_ax.plot(dates, equity_curve_values, label='Equity Curve Trading Value', color='green', linewidth=2)
+        
+        if dates:
+            self.chart_ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+            self.chart_ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            self.chart_figure.autofmt_xdate()
         
         self.chart_ax.legend()
         
