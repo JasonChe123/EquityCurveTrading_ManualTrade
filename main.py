@@ -770,6 +770,7 @@ class TradingGUI:
         
         if sma_38_values:
             self.chart_ax.plot(dates, sma_38_values, label='38 SMA', color='orange', linewidth=2)
+
         
         if equity_curve_values:
             self.chart_ax.plot(dates, equity_curve_values, label='Equity Curve Trading Value', color='green', linewidth=2)
