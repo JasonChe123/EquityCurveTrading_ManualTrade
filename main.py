@@ -727,6 +727,7 @@ class TradingGUI:
             for row in reader:
                 date_str = row.get('date', '')
                 time_str = row.get('create_time', '')
+                trade_number_str = row.get('trade_number', '')
                 demo_value_str = row.get('demo_value', '0')
                 sma_38_str = row.get('38_sma', '0')
                 equity_curve_str = row.get('equity_curve_trading_value', '0')
@@ -739,14 +740,8 @@ class TradingGUI:
                 if not equity_curve_str or not str(equity_curve_str).strip():
                     continue
                 
-                try:
-                    date_part = str(date_str).strip()
-                    time_part = str(time_str).strip() if time_str else ''
-                    if time_part:
-                        trade_date = datetime.strptime(f"{date_part} {time_part}", '%Y-%m-%d %H:%M:%S')
-                    else:
-                        trade_date = datetime.strptime(date_part, '%Y-%m-%d')
-                except ValueError:
+                trade_date = self._parse_chart_datetime(date_str, time_str, trade_number_str)
+                if trade_date is None:
                     continue
                 
                 demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
@@ -814,6 +809,7 @@ class TradingGUI:
         headers = [
             "date",
             "create_time",
+            "trade_number",
             "ticker",
             "open_price",
             "take_profit",
@@ -837,6 +833,106 @@ class TradingGUI:
             with open(self.trade_record_file, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(headers)
+            return
+
+        self._ensure_trade_numbers(headers)
+
+    def _ensure_trade_numbers(self, headers: list[str]) -> None:
+        """Assign sequential trade numbers to rows missing them."""
+        with open(self.trade_record_file, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames or []
+            rows = list(reader)
+
+        next_number = 1
+        for row in rows:
+            trade_number = str(row.get('trade_number', '')).strip()
+            if trade_number:
+                try:
+                    next_number = max(next_number, int(trade_number) + 1)
+                except ValueError:
+                    pass
+
+        changed = 'trade_number' not in fieldnames
+        for row in rows:
+            if not str(row.get('trade_number', '')).strip():
+                row['trade_number'] = str(next_number)
+                next_number += 1
+                changed = True
+
+        if changed:
+            with open(self.trade_record_file, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=headers, extrasaction='ignore')
+                writer.writeheader()
+                writer.writerows(rows)
+
+    def _get_next_trade_number(self) -> int:
+        if not os.path.exists(self.trade_record_file):
+            return 1
+
+        max_number = 0
+        with open(self.trade_record_file, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                trade_number = str(row.get('trade_number', '')).strip()
+                if trade_number:
+                    try:
+                        max_number = max(max_number, int(trade_number))
+                    except ValueError:
+                        pass
+        return max_number + 1
+
+    def _parse_chart_datetime(self, date_str: str, time_str: str, trade_number_str: str) -> datetime | None:
+        date_part = str(date_str).strip()
+        if not date_part:
+            return None
+
+        time_part = str(time_str).strip() if time_str else ''
+        if time_part:
+            try:
+                return datetime.strptime(f"{date_part} {time_part}", '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                pass
+
+        trade_number = str(trade_number_str).strip()
+        if not trade_number:
+            return None
+
+        try:
+            base_date = datetime.strptime(date_part, '%Y-%m-%d')
+            return base_date + timedelta(seconds=int(trade_number))
+        except ValueError:
+            return None
+
+    def _row_matches_open_position(self, row: dict, position: dict) -> bool:
+        if row.get('date') != position.get('date'):
+            return False
+        if row.get('ticker') != position.get('ticker'):
+            return False
+        if row.get('result', '').strip():
+            return False
+
+        row_time = str(row.get('create_time', '')).strip()
+        position_time = str(position.get('create_time', '')).strip()
+        if row_time and position_time:
+            return row_time == position_time
+
+        return str(row.get('trade_number', '')).strip() == str(position.get('trade_number', '')).strip()
+
+    def _row_matches_selected_trade(self, row: dict, selected: dict) -> bool:
+        if row.get('date') != selected['date']:
+            return False
+        if row.get('ticker') != selected['ticker']:
+            return False
+        if row.get('result', '').strip():
+            return False
+
+        row_time = str(row.get('create_time', '')).strip()
+        selected_time = str(selected['time']).strip()
+        if row_time:
+            return row_time == selected_time
+
+        return str(row.get('trade_number', '')).strip() == selected_time
 
     def _get_commission(self, ticker: str) -> float:
         """Get round-trip commission for the given ticker."""
@@ -892,6 +988,7 @@ class TradingGUI:
         row = [
             datetime.now().strftime('%Y-%m-%d'),
             datetime.now().strftime('%H:%M:%S'),
+            self._get_next_trade_number(),
             ticker,
             round(open_price, 2),
             round(take_profit, 2),
@@ -955,7 +1052,7 @@ class TradingGUI:
                     self.open_positions.append(row)
                     self.positions_tree.insert("", "end", values=(
                         row.get('date', ''),
-                        row.get('create_time', ''),
+                        row.get('create_time', '').strip() or row.get('trade_number', ''),
                         row.get('ticker', ''),
                         row.get('side', ''),
                         row.get('open_price', ''),
@@ -1008,10 +1105,7 @@ class TradingGUI:
             fieldnames = reader.fieldnames
             for row in reader:
                 # Check if this row matches the position
-                if (row.get('date') == position.get('date') and 
-                    row.get('create_time') == position.get('create_time') and 
-                    row.get('ticker') == position.get('ticker') and 
-                    not row.get('result', '').strip()):
+                if self._row_matches_open_position(row, position):
                     
                     # Update the result
                     row['result'] = result
@@ -1183,10 +1277,7 @@ class TradingGUI:
             for row in reader:
                 # Check if this row matches any selected trade
                 for selected in selected_trades:
-                    if (row.get('date') == selected['date'] and 
-                        row.get('create_time') == selected['time'] and 
-                        row.get('ticker') == selected['ticker'] and 
-                        not row.get('result', '').strip()):
+                    if self._row_matches_selected_trade(row, selected):
                         row['result'] = result_value
                         
                         # Calculate profit_loss
