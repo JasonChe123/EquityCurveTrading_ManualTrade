@@ -1643,18 +1643,17 @@ class TradingGUI:
                 self._send_tradovate_shortcut(mt5_action)
             
             # Record trade once after all orders are sent
-            if not self.demo_trade_var.get():
-                remark = ", ".join(status)
-                self._record_trade(
-                    ticker=symbol,
-                    open_price=self.app.last_close,
-                    take_profit=take_profit,
-                    stoploss=stop_loss,
-                    quantity=quantity,
-                    side=action,
-                    demo_value="LIVE",
-                    remark=remark
-                )
+            remark = ", ".join(status)
+            self._record_trade(
+                ticker=symbol,
+                open_price=self.app.last_close,
+                take_profit=take_profit,
+                stoploss=stop_loss,
+                quantity=quantity,
+                side=action,
+                demo_value="LIVE",
+                remark=remark
+            )
                 
             self.status_var.set(f"Sent {action} bracket order: " + ", ".join(status))
         except Exception as exc:
