@@ -761,6 +761,10 @@ class TradingGUI:
         self.chart_ax.set_ylabel("Value")
         self.chart_ax.grid(True)
         
+        # Set x-axis limits to match trade numbers exactly
+        if trade_numbers:
+            self.chart_ax.set_xlim(min(trade_numbers) - 0.5, max(trade_numbers) + 0.5)
+        
         if demo_values:
             self.chart_ax.plot(trade_numbers, demo_values, label='Demo Value (Cumulative P/L)', color='blue', linewidth=2)
         
@@ -779,9 +783,8 @@ class TradingGUI:
             sec_ax.set_xlim(self.chart_ax.get_xlim())
             sec_ax.set_xticks(trade_numbers)
             sec_ax.set_xticklabels(dates, rotation=45, ha='left', fontsize=8)
-            # Limit the number of date labels to avoid overcrowding
-            from matplotlib.ticker import MaxNLocator
-            sec_ax.xaxis.set_major_locator(MaxNLocator(nbins=10, integer=True))
+            # Set primary x-axis ticks to match trade numbers exactly
+            self.chart_ax.set_xticks(trade_numbers)
         
         if self.chart_canvas:
             self.chart_canvas.draw()
