@@ -731,6 +731,7 @@ class TradingGUI:
                 demo_value_str = row.get('demo_value', '0')
                 sma_38_str = row.get('38_sma', '0')
                 equity_curve_str = row.get('equity_curve_trading_value', '0')
+                trade_number_str = row.get('trade_number', '')
                 
                 # Skip rows where calculated fields are empty (newly opened trades)
                 if not date_str or not str(date_str).strip():
@@ -741,11 +742,13 @@ class TradingGUI:
                     continue
                 
                 trade_count += 1
+                # Use trade_number from CSV if available, otherwise use trade_count
+                trade_num = int(trade_number_str) if trade_number_str and str(trade_number_str).strip() else trade_count
                 demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
                 sma_38 = float(sma_38_str) if sma_38_str and str(sma_38_str).strip() else 0.0
                 equity_curve = float(equity_curve_str) if equity_curve_str and str(equity_curve_str).strip() else 0.0
                 
-                trade_numbers.append(trade_count)
+                trade_numbers.append(trade_num)
                 dates.append(date_str)
                 demo_values.append(demo_value)
                 sma_38_values.append(sma_38)
