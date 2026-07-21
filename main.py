@@ -718,6 +718,7 @@ class TradingGUI:
         
         # Load data from CSV - only include rows with valid calculated fields
         trade_numbers = []
+        dates = []
         demo_values = []
         sma_38_values = []
         equity_curve_values = []
@@ -745,6 +746,7 @@ class TradingGUI:
                 equity_curve = float(equity_curve_str) if equity_curve_str and str(equity_curve_str).strip() else 0.0
                 
                 trade_numbers.append(trade_count)
+                dates.append(date_str)
                 demo_values.append(demo_value)
                 sma_38_values.append(sma_38)
                 equity_curve_values.append(equity_curve)
@@ -766,6 +768,14 @@ class TradingGUI:
             self.chart_ax.plot(trade_numbers, equity_curve_values, label='Equity Curve Trading Value', color='green', linewidth=2)
         
         self.chart_ax.legend()
+        
+        # Add secondary x-axis with dates
+        if dates and trade_numbers:
+            sec_ax = self.chart_ax.twiny()
+            sec_ax.set_xlabel("Date")
+            sec_ax.set_xlim(self.chart_ax.get_xlim())
+            sec_ax.set_xticks(trade_numbers)
+            sec_ax.set_xticklabels(dates, rotation=45, ha='right', fontsize=8)
         
         if self.chart_canvas:
             self.chart_canvas.draw()
