@@ -813,6 +813,7 @@ class TradingGUI:
         headers = [
             "date",
             "create_time",
+            "trade_number",
             "ticker",
             "open_price",
             "take_profit",
@@ -888,9 +889,13 @@ class TradingGUI:
         # Calculate cumulative demo_value (running total of profit_loss)
         cumulative_demo_value = self._get_cumulative_demo_value()
         
+        # Calculate trade number
+        trade_number = self._get_next_trade_number()
+        
         row = [
             datetime.now().strftime('%Y-%m-%d'),
             datetime.now().strftime('%H:%M:%S'),
+            trade_number,
             ticker,
             round(open_price, 2),
             round(take_profit, 2),
@@ -914,6 +919,18 @@ class TradingGUI:
             writer = csv.writer(f)
             writer.writerow(row)
         self._load_open_positions()
+
+    def _get_next_trade_number(self) -> int:
+        """Calculate the next trade number based on existing records."""
+        if not os.path.exists(self.trade_record_file):
+            return 1
+        
+        count = 0
+        with open(self.trade_record_file, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                count += 1
+        return count + 1
 
     def _get_cumulative_demo_value(self) -> float:
         """Calculate cumulative profit_loss from all completed trades."""
