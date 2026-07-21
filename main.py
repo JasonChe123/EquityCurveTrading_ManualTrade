@@ -776,6 +776,9 @@ class TradingGUI:
             sec_ax.set_xlim(self.chart_ax.get_xlim())
             sec_ax.set_xticks(trade_numbers)
             sec_ax.set_xticklabels(dates, rotation=45, ha='right', fontsize=8)
+            # Limit the number of date labels to avoid overcrowding
+            from matplotlib.ticker import MaxNLocator
+            sec_ax.xaxis.set_major_locator(MaxNLocator(nbins=10, integer=True))
         
         if self.chart_canvas:
             self.chart_canvas.draw()
