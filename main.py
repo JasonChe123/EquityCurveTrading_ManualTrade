@@ -697,6 +697,7 @@ class TradingGUI:
         self.chart_ax.grid(True)
         self.chart_window = None
         self.chart_canvas = None
+        self.chart_sec_ax = None
 
     def _show_chart_window(self) -> None:
         """Show or update the equity chart window."""
@@ -771,6 +772,10 @@ class TradingGUI:
         
         # Add secondary x-axis with dates
         if dates and trade_numbers:
+            # Remove existing secondary axis if it exists
+            if self.chart_sec_ax is not None:
+                self.chart_sec_ax.remove()
+            
             sec_ax = self.chart_ax.twiny()
             sec_ax.set_xlabel("Date")
             sec_ax.set_xlim(self.chart_ax.get_xlim())
@@ -779,6 +784,7 @@ class TradingGUI:
             # Limit the number of date labels to avoid overcrowding
             from matplotlib.ticker import MaxNLocator
             sec_ax.xaxis.set_major_locator(MaxNLocator(nbins=10, integer=True))
+            self.chart_sec_ax = sec_ax
         
         if self.chart_canvas:
             self.chart_canvas.draw()
