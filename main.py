@@ -541,7 +541,8 @@ class TradingGUI:
         self.mt5_contract_size_var = tk.StringVar(value="0.1")
         self.atr_var = tk.StringVar(value="10")
         self.reverse_order_var = tk.BooleanVar(value=False)
-        self.demo_trade_var = tk.BooleanVar(value=True)
+        self.ib_send_var = tk.BooleanVar(value=False)
+        self.mt5_send_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Connecting...")
         self.demo_status_var = tk.StringVar(value="")
         self.atr_display_var = tk.StringVar(value="ATR: --")
@@ -577,22 +578,23 @@ class TradingGUI:
         main = ttk.Frame(self.root, padding=12)
         main.grid(row=0, column=0, sticky="nsew")
 
-        ttk.Checkbutton(main, text="Demo Trade", variable=self.demo_trade_var).grid(row=0, column=0, sticky="w")
+        ttk.Checkbutton(main, text="Reverse Order", variable=self.reverse_order_var).grid(row=0, column=0, sticky="w")
+        ttk.Label(main, text="ATR Mult").grid(row=0, column=1, sticky="w")
+        ttk.Entry(main, textvariable=self.atr_var, width=8).grid(row=0, column=2, sticky="w")
 
-        ttk.Label(main, text="IB Symbol", width=8).grid(row=1, column=0, sticky="w")
+        ttk.Checkbutton(main, text="Send to IB", variable=self.ib_send_var).grid(row=1, column=0, sticky="w")
+        ttk.Label(main, text="IB Symbol", width=8).grid(row=1, column=1, sticky="w")
         symbol_entry = ttk.Entry(main, textvariable=self.symbol_var, width=12)
-        symbol_entry.grid(row=1, column=1)
+        symbol_entry.grid(row=1, column=2)
         symbol_entry.bind('<Return>', lambda e: self._refresh_symbol_data())
-        ttk.Label(main, text="IB Qty").grid(row=1, column=2, sticky="w")
-        ttk.Entry(main, textvariable=self.qty_var, width=8).grid(row=1, column=3, sticky="w")
-        ttk.Label(main, text="ATR Mult").grid(row=1, column=4, sticky="w")
-        ttk.Entry(main, textvariable=self.atr_var, width=8).grid(row=1, column=5, sticky="w")
+        ttk.Label(main, text="IB Qty").grid(row=1, column=3, sticky="w")
+        ttk.Entry(main, textvariable=self.qty_var, width=8).grid(row=1, column=4, sticky="w")
 
-        ttk.Label(main, text="MT5 Symbol", width=8).grid(row=2, column=0, sticky="w")
-        ttk.Entry(main, textvariable=self.mt5_symbol_var, width=12).grid(row=2, column=1)
-        ttk.Label(main, text="MT5 Contract Size").grid(row=2, column=2, sticky="w")
-        ttk.Entry(main, textvariable=self.mt5_contract_size_var, width=8).grid(row=2, column=3, sticky="w")
-        ttk.Checkbutton(main, text="Reverse Order", variable=self.reverse_order_var).grid(row=2, column=4, sticky="w")
+        ttk.Checkbutton(main, text="Send to MT5", variable=self.mt5_send_var).grid(row=2, column=0, sticky="w")
+        ttk.Label(main, text="MT5 Symbol", width=8).grid(row=2, column=1, sticky="w")
+        ttk.Entry(main, textvariable=self.mt5_symbol_var, width=12).grid(row=2, column=2)
+        ttk.Label(main, text="MT5 Contract Size").grid(row=2, column=3, sticky="w")
+        ttk.Entry(main, textvariable=self.mt5_contract_size_var, width=8).grid(row=2, column=4, sticky="w")
 
         button_row = ttk.Frame(main)
         button_row.grid(row=3, column=0, columnspan=6, sticky="we", pady=(12, 8))
@@ -1648,14 +1650,16 @@ class TradingGUI:
             
             status = []
             
-            if self.demo_trade_var.get():
-                demo_price = self.app.last_close
-                self.demo_status_var.set(
-                    f"DEMO MODE - {action} {quantity} {symbol} | "
-                    f"Executed: {demo_price:.2f} | TP: {take_profit:.2f} | SL: {stop_loss:.2f}"
-                )
-                status.append("DEMO MODE")
-            else:
+            # Always record as demo trade
+            demo_price = self.app.last_close
+            self.demo_status_var.set(
+                f"DEMO MODE - {action} {quantity} {symbol} | "
+                f"Executed: {demo_price:.2f} | TP: {take_profit:.2f} | SL: {stop_loss:.2f}"
+            )
+            status.append("DEMO MODE")
+            
+            # Send IB order only if checkbox is checked
+            if self.ib_send_var.get():
                 self.demo_status_var.set("")
                 order_id = self.app.place_bracket_market_order(
                     self.contract,
@@ -1666,7 +1670,8 @@ class TradingGUI:
                 )
                 status.append(f"IB #{order_id}")
             
-            if self.mt5_app.available and self.mt5_app.connected:
+            # Send MT5 order only if checkbox is checked
+            if self.mt5_send_var.get() and self.mt5_app.available and self.mt5_app.connected:
                 if self.reverse_order_var.get():
                     mt5_action = "SELL" if action == "BUY" else "BUY"
                 else:
@@ -1747,3 +1752,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+# todo: demo trade logic
+# todo: change the layout, move 'reverse order' and 'atr multi' to the 1st row, delete 'demo trade', add checkbox before IB and MT5 to decide sending roders
+# todo: add drawdown to the chart
+# todo: don't show Demo/Live and Result, show the current bet and diff to 38 SMA
