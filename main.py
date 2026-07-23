@@ -652,8 +652,8 @@ class TradingGUI:
         self.positions_tree.heading("tp", text="TP")
         self.positions_tree.heading("sl", text="SL")
         self.positions_tree.heading("qty", text="Qty")
-        self.positions_tree.heading("demo", text="Demo/Live")
-        self.positions_tree.heading("result", text="Result")
+        self.positions_tree.heading("demo", text="Bet")
+        self.positions_tree.heading("result", text="Diff to SMA")
         
         self.positions_tree.column("date", width=80)
         self.positions_tree.column("time", width=70)
@@ -983,6 +983,13 @@ class TradingGUI:
                 # Only show trades with empty result (open positions)
                 if not row.get('result', '').strip():
                     self.open_positions.append(row)
+                    # Calculate diff to SMA
+                    demo_value_str = row.get('demo_value', '0')
+                    sma_38_str = row.get('38_sma', '0')
+                    demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
+                    sma_38 = float(sma_38_str) if sma_38_str and str(sma_38_str).strip() else 0.0
+                    diff_to_sma = demo_value - sma_38
+                    
                     self.positions_tree.insert("", "end", values=(
                         row.get('date', ''),
                         row.get('create_time', ''),
@@ -992,8 +999,8 @@ class TradingGUI:
                         row.get('take_profit', ''),
                         row.get('stoploss', ''),
                         row.get('quantity', ''),
-                        row.get('demo_value', ''),
-                        row.get('result', '')
+                        row.get('bet', ''),
+                        round(diff_to_sma, 2)
                     ))
 
     def _check_tp_sl_hits(self, current_price: float) -> list[dict]:
@@ -1879,7 +1886,5 @@ def main() -> int:
 if __name__ == "__main__":
     raise SystemExit(main())
 
-# todo: demo trade logic
-# todo: change the layout, move 'reverse order' and 'atr multi' to the 1st row, delete 'demo trade', add checkbox before IB and MT5 to decide sending roders
 # todo: add drawdown to the chart
 # todo: don't show Demo/Live and Result, show the current bet and diff to 38 SMA
