@@ -623,20 +623,20 @@ class TradingGUI:
         )
         self.reconnect_browser_button.grid(row=0, column=3, padx=(8, 0))
 
-        ttk.Label(main, textvariable=self.atr_display_var).grid(row=4, column=0, columnspan=6, sticky="w", pady=(8, 0))
-        ttk.Label(main, textvariable=self.demo_status_var).grid(row=5, column=0, columnspan=6, sticky="w", pady=(4, 0))
+        ttk.Label(main, textvariable=self.atr_display_var).grid(row=5, column=0, columnspan=6, sticky="w", pady=(8, 0))
+        ttk.Label(main, textvariable=self.demo_status_var).grid(row=6, column=0, columnspan=6, sticky="w", pady=(4, 0))
         
         # Separate Live status with different color
         status_frame = ttk.Frame(main)
-        status_frame.grid(row=6, column=0, columnspan=6, sticky="w", pady=(4, 0))
+        status_frame.grid(row=7, column=0, columnspan=6, sticky="w", pady=(4, 0))
         self.live_status_label = tk.Label(status_frame, textvariable=self.status_var, fg="green", font=('TkDefaultFont', 9, 'bold'))
         self.live_status_label.pack(anchor="w")
 
         # Open Positions Table
-        ttk.Label(main, text="Open Positions", font=('TkDefaultFont', 10, 'bold')).grid(row=7, column=0, columnspan=6, sticky="w", pady=(16, 8))
+        ttk.Label(main, text="Open Positions", font=('TkDefaultFont', 10, 'bold')).grid(row=8, column=0, columnspan=6, sticky="w", pady=(16, 8))
         
         table_frame = ttk.Frame(main)
-        table_frame.grid(row=8, column=0, columnspan=6, sticky="nsew")
+        table_frame.grid(row=9, column=0, columnspan=6, sticky="nsew")
         
         columns = ("date", "time", "ticker", "side", "open_price", "tp", "sl", "qty", "demo", "result")
         self.positions_tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=6, selectmode="extended")
@@ -677,11 +677,11 @@ class TradingGUI:
         # Add dropdown for result selection
         self.result_var = tk.StringVar(value="")
         result_dropdown = ttk.Combobox(main, textvariable=self.result_var, values=["", "TP", "SL"], state="readonly", width=10)
-        result_dropdown.grid(row=9, column=0, sticky="w", pady=(8, 0))
-        ttk.Button(main, text="Update Result", command=self._update_selected_result).grid(row=9, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        result_dropdown.grid(row=10, column=0, sticky="w", pady=(8, 0))
+        ttk.Button(main, text="Update Result", command=self._update_selected_result).grid(row=10, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
 
         # Chart button
-        ttk.Button(main, text="Show Equity Chart", command=self._show_chart_window).grid(row=10, column=0, columnspan=6, sticky="w", pady=(12, 0))
+        ttk.Button(main, text="Show Equity Chart", command=self._show_chart_window).grid(row=11, column=0, columnspan=6, sticky="w", pady=(12, 0))
 
     def _init_trade_record(self) -> None:
         self.trade_record_dir = "trade_record"
