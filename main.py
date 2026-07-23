@@ -1747,22 +1747,116 @@ class TradingGUI:
             if self.tradovate_send_var.get():
                 self._send_tradovate_shortcut("CLOSE")
             
-            # Record trade once after all orders are sent
-            remark = ", ".join(status)
-            self._record_trade(
-                ticker=symbol,
-                open_price=self.app.last_close,
-                take_profit=0,
-                stoploss=0,
-                quantity=0,
-                side="CLOSE",
-                demo_value="LIVE",
-                remark=remark
-            )
+            # Update all open trades with result="CLOSE" and profit_loss=0
+            self._update_all_open_positions_to_closed()
             
             self.status_var.set("Sent close-all order: " + ", ".join(status))
         except Exception as exc:
             messagebox.showerror("Close error", str(exc))
+
+    def _update_all_open_positions_to_closed(self) -> None:
+        """Update all open positions to have result='CLOSE' and profit_loss=0."""
+        if not os.path.exists(self.trade_record_file):
+            return
+        
+        # Read all rows from CSV
+        rows = []
+        updated_count = 0
+        
+        with open(self.trade_record_file, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames
+            for row in reader:
+                # Update all rows with empty result (open positions)
+                if not row.get('result', '').strip():
+                    row['result'] = "CLOSE"
+                    row['profit_loss'] = 0
+                    updated_count += 1
+                rows.append(row)
+        
+        if updated_count == 0:
+            return
+        
+        # Recalculate demo_value and 38_sma for all rows
+        cumulative = 0.0
+        demo_values = []
+        for row in rows:
+            profit_loss = row.get('profit_loss', 0)
+            if isinstance(profit_loss, str):
+                profit_loss = profit_loss.strip()
+            if profit_loss:
+                try:
+                    cumulative += float(profit_loss)
+                except (ValueError, TypeError):
+                    pass
+            row['demo_value'] = round(cumulative, 2)
+            demo_values.append(cumulative)
+        
+        # Calculate 38_sma for each row
+        for i, row in enumerate(rows):
+            if i >= 37:  # Need at least 38 data points (0-indexed)
+                row['38_sma'] = round(self._calculate_38_sma(demo_values[:i+1]), 2)
+        
+        # Calculate signal and is_trade for each row
+        signals = []
+        for i, row in enumerate(rows):
+            demo_value_str = row.get('demo_value', 0)
+            demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
+            sma_38_str = row.get('38_sma', 0)
+            sma_38 = float(sma_38_str) if sma_38_str and str(sma_38_str).strip() else 0.0
+            
+            # signal: 1 if demo_value > 38_sma, else 0
+            signal = 1 if demo_value > sma_38 else 0
+            row['signal'] = signal
+            signals.append(signal)
+            
+            # is_trade: 1 if previous signal is 1, else -1
+            if i == 0:
+                is_trade = -1  # No previous signal for first row
+            else:
+                is_trade = 1 if signals[i-1] == 1 else -1
+            row['is_trade'] = is_trade
+        
+        # Calculate equity_curve_trading_value for each row
+        equity_curve_value = 0.0
+        for i, row in enumerate(rows):
+            is_trade = int(row.get('is_trade', -1))
+            profit_loss_str = row.get('profit_loss', 0)
+            if isinstance(profit_loss_str, str):
+                profit_loss_str = profit_loss_str.strip()
+            profit_loss = float(profit_loss_str) if profit_loss_str else 0.0
+            commission_str = row.get('commission', 0)
+            if isinstance(commission_str, str):
+                commission_str = commission_str.strip()
+            commission = float(commission_str) if commission_str else 0.0
+            
+            if i == 0:
+                equity_curve_trading_value = 0.0  # First row starts at 0
+            else:
+                if is_trade == 1:
+                    equity_curve_trading_value = equity_curve_value + profit_loss
+                else:  # is_trade == -1
+                    equity_curve_trading_value = equity_curve_value - profit_loss - (2 * commission)
+            equity_curve_value = equity_curve_trading_value
+            row['equity_curve_trading_value'] = round(equity_curve_trading_value, 2)
+        
+        # Write updated rows back to CSV
+        with open(self.trade_record_file, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        
+        # Refresh the table
+        self._load_open_positions()
+        
+        # Update chart if window is open
+        if self.chart_window is not None and tk.Toplevel.winfo_exists(self.chart_window):
+            self.root.after(100, self._update_chart)
+        
+        # Update reverse order checkbox based on latest demo value vs 38 SMA
+        self._update_reverse_order_checkbox()
+        
+        print(f"Updated {updated_count} open position(s) to CLOSED")
 
     def _on_close(self) -> None:
         try:
