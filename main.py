@@ -543,6 +543,7 @@ class TradingGUI:
         self.reverse_order_var = tk.BooleanVar(value=False)
         self.ib_send_var = tk.BooleanVar(value=False)
         self.mt5_send_var = tk.BooleanVar(value=False)
+        self.tradovate_send_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Connecting...")
         self.demo_status_var = tk.StringVar(value="")
         self.atr_display_var = tk.StringVar(value="ATR: --")
@@ -596,8 +597,10 @@ class TradingGUI:
         ttk.Label(main, text="MT5 Contract Size").grid(row=2, column=3, sticky="w")
         ttk.Entry(main, textvariable=self.mt5_contract_size_var, width=8).grid(row=2, column=4, sticky="w")
 
+        ttk.Checkbutton(main, text="Send to Tradovate", variable=self.tradovate_send_var).grid(row=3, column=0, sticky="w")
+
         button_row = ttk.Frame(main)
-        button_row.grid(row=3, column=0, columnspan=6, sticky="we", pady=(12, 8))
+        button_row.grid(row=4, column=0, columnspan=6, sticky="we", pady=(12, 8))
         ttk.Button(
             button_row,
             text="Buy",
@@ -1686,8 +1689,9 @@ class TradingGUI:
                 )
                 status.append(f"MT5 #{mt5_order_id} ({mt5_action})")
                 
-                # Send keyboard shortcut to tradovate.com after MT5 order
-                self._send_tradovate_shortcut(mt5_action)
+                # Send keyboard shortcut to tradovate.com after MT5 order if checkbox is checked
+                if self.tradovate_send_var.get():
+                    self._send_tradovate_shortcut(mt5_action)
             
             # Record trade once after all orders are sent
             remark = ", ".join(status)
