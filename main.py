@@ -558,6 +558,7 @@ class TradingGUI:
 
         self._init_trade_record()
         self._init_chart()
+        self._initialize_drawdown_values()  # Temporarily initialize drawdown values
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -1047,6 +1048,39 @@ class TradingGUI:
                         return latest_demo_value, latest_sma_38
         
         return 0.0, 0.0
+
+    def _initialize_drawdown_values(self) -> None:
+        """Initialize drawdown values for existing trades that don't have them."""
+        if not os.path.exists(self.trade_record_file):
+            return
+        
+        # Read all rows from CSV
+        rows = []
+        updated = False
+        
+        with open(self.trade_record_file, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames
+            for row in reader:
+                # Check if drawdown is empty
+                if not row.get('drawdown', '').strip():
+                    updated = True
+                rows.append(row)
+        
+        if not updated:
+            print("All rows already have drawdown values")
+            return
+        
+        # Recalculate all derived fields (including drawdown)
+        rows = self._recalculate_derived_fields(rows)
+        
+        # Write updated rows back to CSV
+        with open(self.trade_record_file, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        
+        print(f"Initialized drawdown values for {len(rows)} rows")
 
     def _load_open_positions(self) -> None:
         """Load open positions from CSV file (trades with empty result)."""
