@@ -10,7 +10,6 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
-import matplotlib.dates as mdates
 import random
 import time
 
@@ -184,41 +183,35 @@ class IBConnectionApp(EWrapper, EClient):
             self.cancelOrder(order_id)
 
     @staticmethod
-    def _market_order(action: str, quantity: int) -> Order:
+    def _create_base_order(action: str, quantity: int) -> Order:
+        """Create base order with common fields."""
         order = Order()
         order.action = action
-        order.orderType = "MKT"
         order.totalQuantity = quantity
         order.tif = "DAY"
         order.eTradeOnly = ""
         order.firmQuoteOnly = ""
         order.account = "U14659833"
+        return order
+
+    @staticmethod
+    def _market_order(action: str, quantity: int) -> Order:
+        order = IBConnectionApp._create_base_order(action, quantity)
+        order.orderType = "MKT"
         return order
 
     @staticmethod
     def _limit_order(action: str, quantity: int, limit_price: float) -> Order:
-        order = Order()
-        order.action = action
+        order = IBConnectionApp._create_base_order(action, quantity)
         order.orderType = "LMT"
-        order.totalQuantity = quantity
         order.lmtPrice = limit_price
-        order.tif = "DAY"
-        order.eTradeOnly = ""
-        order.firmQuoteOnly = ""
-        order.account = "U14659833"
         return order
 
     @staticmethod
     def _stop_order(action: str, quantity: int, stop_price: float) -> Order:
-        order = Order()
-        order.action = action
+        order = IBConnectionApp._create_base_order(action, quantity)
         order.orderType = "STP"
-        order.totalQuantity = quantity
         order.auxPrice = stop_price
-        order.tif = "DAY"
-        order.eTradeOnly = ""
-        order.firmQuoteOnly = ""
-        order.account = "U14659833"
         return order
 
     def place_market_order(self, contract: Contract, action: str, quantity: int) -> int:
@@ -551,7 +544,6 @@ class TradingGUI:
         self.demo_status_var = tk.StringVar(value="")
         self.atr_display_var = tk.StringVar(value="ATR: --")
         self.open_positions = []
-        self.position_dropdown_vars = {}
         self.browser_app = None
         self.browser_window = None
         self.browser_connected = False
@@ -799,23 +791,7 @@ class TradingGUI:
 
     def _update_reverse_order_checkbox(self) -> None:
         """Update Reverse Order checkbox based on demo value vs 38 SMA."""
-        if not os.path.exists(self.trade_record_file):
-            return
-        
-        # Get the latest demo value and 38 SMA
-        latest_demo_value = 0.0
-        latest_sma_38 = 0.0
-        
-        with open(self.trade_record_file, 'r', newline='') as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
-            if rows:
-                last_row = rows[-1]
-                demo_value_str = last_row.get('demo_value', '0')
-                sma_38_str = last_row.get('38_sma', '0')
-                
-                latest_demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
-                latest_sma_38 = float(sma_38_str) if sma_38_str and str(sma_38_str).strip() else 0.0
+        latest_demo_value, latest_sma_38 = self._get_latest_closed_trade_values()
         
         # Set checkbox: checked if demo value < 38 SMA, unchecked if >=
         if latest_demo_value < latest_sma_38:
@@ -969,17 +945,77 @@ class TradingGUI:
             return 0.0
         return sum(demo_values[-38:]) / 38
 
-    def _load_open_positions(self) -> None:
-        """Load open positions from CSV file (trades with empty result)."""
-        self.open_positions = []
-        self.positions_tree.delete(*self.positions_tree.get_children())
+    def _recalculate_derived_fields(self, rows: list[dict]) -> list[dict]:
+        """Recalculate all derived fields (demo_value, 38_sma, signal, is_trade, equity_curve_trading_value) for all rows."""
+        # Recalculate demo_value and 38_sma for all rows
+        cumulative = 0.0
+        demo_values = []
+        for row in rows:
+            profit_loss = row.get('profit_loss', 0)
+            if isinstance(profit_loss, str):
+                profit_loss = profit_loss.strip()
+            if profit_loss:
+                try:
+                    cumulative += float(profit_loss)
+                except (ValueError, TypeError):
+                    pass
+            row['demo_value'] = round(cumulative, 2)
+            demo_values.append(cumulative)
         
+        # Calculate 38_sma for each row
+        for i, row in enumerate(rows):
+            if i >= 37:  # Need at least 38 data points (0-indexed)
+                row['38_sma'] = round(self._calculate_38_sma(demo_values[:i+1]), 2)
+        
+        # Calculate signal and is_trade for each row
+        signals = []
+        for i, row in enumerate(rows):
+            demo_value_str = row.get('demo_value', 0)
+            demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
+            sma_38_str = row.get('38_sma', 0)
+            sma_38 = float(sma_38_str) if sma_38_str and str(sma_38_str).strip() else 0.0
+            
+            # signal: 1 if demo_value > 38_sma, else 0
+            signal = 1 if demo_value > sma_38 else 0
+            row['signal'] = signal
+            signals.append(signal)
+            
+            # is_trade: 1 if previous signal is 1, else -1
+            if i == 0:
+                is_trade = -1  # No previous signal for first row
+            else:
+                is_trade = 1 if signals[i-1] == 1 else -1
+            row['is_trade'] = is_trade
+        
+        # Calculate equity_curve_trading_value for each row
+        equity_curve_value = 0.0
+        for i, row in enumerate(rows):
+            is_trade = int(row.get('is_trade', -1))
+            profit_loss_str = row.get('profit_loss', 0)
+            if isinstance(profit_loss_str, str):
+                profit_loss_str = profit_loss_str.strip()
+            profit_loss = float(profit_loss_str) if profit_loss_str else 0.0
+            commission_str = row.get('commission', 0)
+            if isinstance(commission_str, str):
+                commission_str = commission_str.strip()
+            commission = float(commission_str) if commission_str else 0.0
+            
+            if i == 0:
+                equity_curve_trading_value = 0.0  # First row starts at 0
+            else:
+                if is_trade == 1:
+                    equity_curve_trading_value = equity_curve_value + profit_loss
+                else:  # is_trade == -1
+                    equity_curve_trading_value = equity_curve_value - profit_loss - (2 * commission)
+            equity_curve_value = equity_curve_trading_value
+            row['equity_curve_trading_value'] = round(equity_curve_trading_value, 2)
+        
+        return rows
+
+    def _get_latest_closed_trade_values(self) -> tuple[float, float]:
+        """Get the latest demo_value and 38_sma from the most recent closed trade."""
         if not os.path.exists(self.trade_record_file):
-            return
-        
-        # Get the latest demo_value and 38_sma from the most recent row with calculated values
-        latest_demo_value = 0.0
-        latest_sma_38 = 0.0
+            return 0.0, 0.0
         
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
@@ -991,7 +1027,20 @@ class TradingGUI:
                     if sma_38_str and str(sma_38_str).strip():
                         latest_demo_value = float(row.get('demo_value', '0')) if row.get('demo_value', '').strip() else 0.0
                         latest_sma_38 = float(sma_38_str)
-                        break
+                        return latest_demo_value, latest_sma_38
+        
+        return 0.0, 0.0
+
+    def _load_open_positions(self) -> None:
+        """Load open positions from CSV file (trades with empty result)."""
+        self.open_positions = []
+        self.positions_tree.delete(*self.positions_tree.get_children())
+        
+        if not os.path.exists(self.trade_record_file):
+            return
+        
+        # Get the latest demo_value and 38_sma from the most recent closed trade
+        latest_demo_value, latest_sma_38 = self._get_latest_closed_trade_values()
         
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
@@ -1093,68 +1142,8 @@ class TradingGUI:
         if not updated:
             return
         
-        # Recalculate demo_value and 38_sma for all rows
-        cumulative = 0.0
-        demo_values = []
-        for row in rows:
-            profit_loss = row.get('profit_loss', 0)
-            if isinstance(profit_loss, str):
-                profit_loss = profit_loss.strip()
-            if profit_loss:
-                try:
-                    cumulative += float(profit_loss)
-                except (ValueError, TypeError):
-                    pass
-            row['demo_value'] = round(cumulative, 2)
-            demo_values.append(cumulative)
-        
-        # Calculate 38_sma for each row
-        for i, row in enumerate(rows):
-            if i >= 37:  # Need at least 38 data points (0-indexed)
-                row['38_sma'] = round(self._calculate_38_sma(demo_values[:i+1]), 2)
-        
-        # Calculate signal and is_trade for each row
-        signals = []
-        for i, row in enumerate(rows):
-            demo_value_str = row.get('demo_value', 0)
-            demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
-            sma_38_str = row.get('38_sma', 0)
-            sma_38 = float(sma_38_str) if sma_38_str and str(sma_38_str).strip() else 0.0
-            
-            # signal: 1 if demo_value > 38_sma, else 0
-            signal = 1 if demo_value > sma_38 else 0
-            row['signal'] = signal
-            signals.append(signal)
-            
-            # is_trade: 1 if previous signal is 1, else -1
-            if i == 0:
-                is_trade = -1  # No previous signal for first row
-            else:
-                is_trade = 1 if signals[i-1] == 1 else -1
-            row['is_trade'] = is_trade
-        
-        # Calculate equity_curve_trading_value for each row
-        equity_curve_value = 0.0
-        for i, row in enumerate(rows):
-            is_trade = int(row.get('is_trade', -1))
-            profit_loss_str = row.get('profit_loss', 0)
-            if isinstance(profit_loss_str, str):
-                profit_loss_str = profit_loss_str.strip()
-            profit_loss = float(profit_loss_str) if profit_loss_str else 0.0
-            commission_str = row.get('commission', 0)
-            if isinstance(commission_str, str):
-                commission_str = commission_str.strip()
-            commission = float(commission_str) if commission_str else 0.0
-            
-            if i == 0:
-                equity_curve_trading_value = 0.0  # First row starts at 0
-            else:
-                if is_trade == 1:
-                    equity_curve_trading_value = equity_curve_value + profit_loss
-                else:  # is_trade == -1
-                    equity_curve_trading_value = equity_curve_value - profit_loss - (2 * commission)
-            equity_curve_value = equity_curve_trading_value
-            row['equity_curve_trading_value'] = round(equity_curve_trading_value, 2)
+        # Recalculate all derived fields
+        rows = self._recalculate_derived_fields(rows)
         
         # Write updated rows back to CSV
         with open(self.trade_record_file, 'w', newline='') as f:
@@ -1268,68 +1257,8 @@ class TradingGUI:
             messagebox.showerror("Error", "Could not find the selected trade(s) in the CSV file.")
             return
         
-        # Recalculate demo_value and 38_sma for all rows
-        cumulative = 0.0
-        demo_values = []
-        for row in rows:
-            profit_loss = row.get('profit_loss', 0)
-            if isinstance(profit_loss, str):
-                profit_loss = profit_loss.strip()
-            if profit_loss:
-                try:
-                    cumulative += float(profit_loss)
-                except (ValueError, TypeError):
-                    pass
-            row['demo_value'] = round(cumulative, 2)
-            demo_values.append(cumulative)
-        
-        # Calculate 38_sma for each row
-        for i, row in enumerate(rows):
-            if i >= 37:  # Need at least 38 data points (0-indexed)
-                row['38_sma'] = round(self._calculate_38_sma(demo_values[:i+1]), 2)
-        
-        # Calculate signal and is_trade for each row
-        signals = []
-        for i, row in enumerate(rows):
-            demo_value_str = row.get('demo_value', 0)
-            demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
-            sma_38_str = row.get('38_sma', 0)
-            sma_38 = float(sma_38_str) if sma_38_str and str(sma_38_str).strip() else 0.0
-            
-            # signal: 1 if demo_value > 38_sma, else 0
-            signal = 1 if demo_value > sma_38 else 0
-            row['signal'] = signal
-            signals.append(signal)
-            
-            # is_trade: 1 if previous signal is 1, else -1
-            if i == 0:
-                is_trade = -1  # No previous signal for first row
-            else:
-                is_trade = 1 if signals[i-1] == 1 else -1
-            row['is_trade'] = is_trade
-        
-        # Calculate equity_curve_trading_value for each row
-        equity_curve_value = 0.0
-        for i, row in enumerate(rows):
-            is_trade = int(row.get('is_trade', -1))
-            profit_loss_str = row.get('profit_loss', 0)
-            if isinstance(profit_loss_str, str):
-                profit_loss_str = profit_loss_str.strip()
-            profit_loss = float(profit_loss_str) if profit_loss_str else 0.0
-            commission_str = row.get('commission', 0)
-            if isinstance(commission_str, str):
-                commission_str = commission_str.strip()
-            commission = float(commission_str) if commission_str else 0.0
-            
-            if i == 0:
-                equity_curve_trading_value = 0.0  # First row starts at 0
-            else:
-                if is_trade == 1:
-                    equity_curve_trading_value = equity_curve_value + profit_loss
-                else:  # is_trade == -1
-                    equity_curve_trading_value = equity_curve_value - profit_loss - (2 * commission)
-            equity_curve_value = equity_curve_trading_value
-            row['equity_curve_trading_value'] = round(equity_curve_trading_value, 2)
+        # Recalculate all derived fields
+        rows = self._recalculate_derived_fields(rows)
         
         # Write updated rows back to CSV
         with open(self.trade_record_file, 'w', newline='') as f:
@@ -1796,68 +1725,8 @@ class TradingGUI:
         if updated_count == 0:
             return
         
-        # Recalculate demo_value and 38_sma for all rows
-        cumulative = 0.0
-        demo_values = []
-        for row in rows:
-            profit_loss = row.get('profit_loss', 0)
-            if isinstance(profit_loss, str):
-                profit_loss = profit_loss.strip()
-            if profit_loss:
-                try:
-                    cumulative += float(profit_loss)
-                except (ValueError, TypeError):
-                    pass
-            row['demo_value'] = round(cumulative, 2)
-            demo_values.append(cumulative)
-        
-        # Calculate 38_sma for each row
-        for i, row in enumerate(rows):
-            if i >= 37:  # Need at least 38 data points (0-indexed)
-                row['38_sma'] = round(self._calculate_38_sma(demo_values[:i+1]), 2)
-        
-        # Calculate signal and is_trade for each row
-        signals = []
-        for i, row in enumerate(rows):
-            demo_value_str = row.get('demo_value', 0)
-            demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
-            sma_38_str = row.get('38_sma', 0)
-            sma_38 = float(sma_38_str) if sma_38_str and str(sma_38_str).strip() else 0.0
-            
-            # signal: 1 if demo_value > 38_sma, else 0
-            signal = 1 if demo_value > sma_38 else 0
-            row['signal'] = signal
-            signals.append(signal)
-            
-            # is_trade: 1 if previous signal is 1, else -1
-            if i == 0:
-                is_trade = -1  # No previous signal for first row
-            else:
-                is_trade = 1 if signals[i-1] == 1 else -1
-            row['is_trade'] = is_trade
-        
-        # Calculate equity_curve_trading_value for each row
-        equity_curve_value = 0.0
-        for i, row in enumerate(rows):
-            is_trade = int(row.get('is_trade', -1))
-            profit_loss_str = row.get('profit_loss', 0)
-            if isinstance(profit_loss_str, str):
-                profit_loss_str = profit_loss_str.strip()
-            profit_loss = float(profit_loss_str) if profit_loss_str else 0.0
-            commission_str = row.get('commission', 0)
-            if isinstance(commission_str, str):
-                commission_str = commission_str.strip()
-            commission = float(commission_str) if commission_str else 0.0
-            
-            if i == 0:
-                equity_curve_trading_value = 0.0  # First row starts at 0
-            else:
-                if is_trade == 1:
-                    equity_curve_trading_value = equity_curve_value + profit_loss
-                else:  # is_trade == -1
-                    equity_curve_trading_value = equity_curve_value - profit_loss - (2 * commission)
-            equity_curve_value = equity_curve_trading_value
-            row['equity_curve_trading_value'] = round(equity_curve_trading_value, 2)
+        # Recalculate all derived fields
+        rows = self._recalculate_derived_fields(rows)
         
         # Write updated rows back to CSV
         with open(self.trade_record_file, 'w', newline='') as f:
