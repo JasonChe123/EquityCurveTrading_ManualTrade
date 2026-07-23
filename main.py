@@ -1691,10 +1691,14 @@ class TradingGUI:
                     distance_points,
                 )
                 status.append(f"MT5 #{mt5_order_id} ({mt5_action})")
-                
-                # Send keyboard shortcut to tradovate.com after MT5 order if checkbox is checked
-                if self.tradovate_send_var.get():
-                    self._send_tradovate_shortcut(mt5_action)
+            
+            # Send keyboard shortcut to tradovate.com if checkbox is checked
+            if self.tradovate_send_var.get():
+                if self.reverse_order_var.get():
+                    tradovate_action = "SELL" if action == "BUY" else "BUY"
+                else:
+                    tradovate_action = action
+                self._send_tradovate_shortcut(tradovate_action)
             
             # Record trade once after all orders are sent
             remark = ", ".join(status)
