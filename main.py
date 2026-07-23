@@ -1022,10 +1022,10 @@ class TradingGUI:
         # Calculate drawdown for each row
         peak_value = 0.0
         for i, row in enumerate(rows):
-            demo_value_str = row.get('demo_value', 0)
-            demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
-            peak_value = max(peak_value, demo_value)
-            drawdown = demo_value - peak_value  # Negative when in drawdown
+            equity_curve_str = row.get('equity_curve_trading_value', 0)
+            equity_curve_value = float(equity_curve_str) if equity_curve_str and str(equity_curve_str).strip() else 0.0
+            peak_value = max(peak_value, equity_curve_value)
+            drawdown = equity_curve_value - peak_value  # Negative when in drawdown
             row['drawdown'] = round(drawdown, 2)
         
         return rows
