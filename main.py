@@ -1809,6 +1809,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-# todo: add drawdown to the chart
-# todo: don't show Demo/Live and Result, show the current bet and diff to 38 SMA
