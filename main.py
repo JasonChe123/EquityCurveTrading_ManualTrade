@@ -581,21 +581,21 @@ class TradingGUI:
 
         ttk.Checkbutton(main, text="Reverse Order", variable=self.reverse_order_var).grid(row=0, column=0, sticky="w")
         ttk.Label(main, text="ATR Mult").grid(row=0, column=1, sticky="w")
-        ttk.Entry(main, textvariable=self.atr_var, width=8).grid(row=0, column=2, sticky="w")
+        ttk.Entry(main, textvariable=self.atr_var, width=12).grid(row=0, column=2, sticky="w")
 
         ttk.Checkbutton(main, text="Send to IB", variable=self.ib_send_var).grid(row=1, column=0, sticky="w")
         ttk.Label(main, text="IB Symbol", width=8).grid(row=1, column=1, sticky="w")
         symbol_entry = ttk.Entry(main, textvariable=self.symbol_var, width=12)
-        symbol_entry.grid(row=1, column=2)
+        symbol_entry.grid(row=1, column=2, sticky="w")
         symbol_entry.bind('<Return>', lambda e: self._refresh_symbol_data())
         ttk.Label(main, text="IB Qty").grid(row=1, column=3, sticky="w")
-        ttk.Entry(main, textvariable=self.qty_var, width=8).grid(row=1, column=4, sticky="w")
+        ttk.Entry(main, textvariable=self.qty_var, width=12).grid(row=1, column=4, sticky="w")
 
         ttk.Checkbutton(main, text="Send to MT5", variable=self.mt5_send_var).grid(row=2, column=0, sticky="w")
         ttk.Label(main, text="MT5 Symbol", width=8).grid(row=2, column=1, sticky="w")
-        ttk.Entry(main, textvariable=self.mt5_symbol_var, width=12).grid(row=2, column=2)
+        ttk.Entry(main, textvariable=self.mt5_symbol_var, width=12).grid(row=2, column=2, sticky="w")
         ttk.Label(main, text="MT5 Contract Size").grid(row=2, column=3, sticky="w")
-        ttk.Entry(main, textvariable=self.mt5_contract_size_var, width=8).grid(row=2, column=4, sticky="w")
+        ttk.Entry(main, textvariable=self.mt5_contract_size_var, width=12).grid(row=2, column=4, sticky="w")
 
         ttk.Checkbutton(main, text="Send to Tradovate", variable=self.tradovate_send_var).grid(row=3, column=0, sticky="w")
 
