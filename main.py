@@ -723,6 +723,7 @@ class TradingGUI:
         demo_values = []
         sma_38_values = []
         equity_curve_values = []
+        drawdown_values = []
         
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
@@ -732,6 +733,7 @@ class TradingGUI:
                 demo_value_str = row.get('demo_value', '0')
                 sma_38_str = row.get('38_sma', '0')
                 equity_curve_str = row.get('equity_curve_trading_value', '0')
+                drawdown_str = row.get('drawdown', '0')
                 
                 # Skip rows where calculated fields are empty (newly opened trades)
                 if not date_str or not str(date_str).strip():
@@ -745,12 +747,14 @@ class TradingGUI:
                 demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
                 sma_38 = float(sma_38_str) if sma_38_str and str(sma_38_str).strip() else 0.0
                 equity_curve = float(equity_curve_str) if equity_curve_str and str(equity_curve_str).strip() else 0.0
+                drawdown = float(drawdown_str) if drawdown_str and str(drawdown_str).strip() else 0.0
                 
                 trade_numbers.append(trade_count)
                 dates.append(date_str)
                 demo_values.append(demo_value)
                 sma_38_values.append(sma_38)
                 equity_curve_values.append(equity_curve)
+                drawdown_values.append(drawdown)
         
         # Clear and replot
         self.chart_ax.clear()
@@ -767,6 +771,10 @@ class TradingGUI:
         
         if equity_curve_values:
             self.chart_ax.plot(trade_numbers, equity_curve_values, label='Equity Curve Trading Value', color='green', linewidth=2)
+        
+        if drawdown_values:
+            # Plot drawdown as grey area chart
+            self.chart_ax.fill_between(trade_numbers, drawdown_values, 0, color='grey', alpha=0.3, label='Drawdown')
         
         self.chart_ax.legend()
         
@@ -1009,6 +1017,15 @@ class TradingGUI:
                     equity_curve_trading_value = equity_curve_value - profit_loss - (2 * commission)
             equity_curve_value = equity_curve_trading_value
             row['equity_curve_trading_value'] = round(equity_curve_trading_value, 2)
+        
+        # Calculate drawdown for each row
+        peak_value = 0.0
+        for i, row in enumerate(rows):
+            demo_value_str = row.get('demo_value', 0)
+            demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
+            peak_value = max(peak_value, demo_value)
+            drawdown = demo_value - peak_value  # Negative when in drawdown
+            row['drawdown'] = round(drawdown, 2)
         
         return rows
 
