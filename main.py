@@ -977,18 +977,30 @@ class TradingGUI:
         if not os.path.exists(self.trade_record_file):
             return
         
+        # Get the latest demo_value and 38_sma from the most recent row with calculated values
+        latest_demo_value = 0.0
+        latest_sma_38 = 0.0
+        
+        with open(self.trade_record_file, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            if rows:
+                # Find the most recent row with valid 38_sma (closed trade)
+                for row in reversed(rows):
+                    sma_38_str = row.get('38_sma', '0')
+                    if sma_38_str and str(sma_38_str).strip():
+                        latest_demo_value = float(row.get('demo_value', '0')) if row.get('demo_value', '').strip() else 0.0
+                        latest_sma_38 = float(sma_38_str)
+                        break
+        
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
             for row in reader:
                 # Only show trades with empty result (open positions)
                 if not row.get('result', '').strip():
                     self.open_positions.append(row)
-                    # Calculate diff to SMA
-                    demo_value_str = row.get('demo_value', '0')
-                    sma_38_str = row.get('38_sma', '0')
-                    demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
-                    sma_38 = float(sma_38_str) if sma_38_str and str(sma_38_str).strip() else 0.0
-                    diff_to_sma = demo_value - sma_38
+                    # Calculate diff to SMA using latest values
+                    diff_to_sma = latest_demo_value - latest_sma_38
                     
                     self.positions_tree.insert("", "end", values=(
                         row.get('date', ''),
