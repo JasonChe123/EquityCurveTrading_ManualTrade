@@ -1056,22 +1056,14 @@ class TradingGUI:
         
         # Read all rows from CSV
         rows = []
-        updated = False
         
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
             fieldnames = reader.fieldnames
             for row in reader:
-                # Check if drawdown is empty
-                if not row.get('drawdown', '').strip():
-                    updated = True
                 rows.append(row)
         
-        if not updated:
-            print("All rows already have drawdown values")
-            return
-        
-        # Recalculate all derived fields (including drawdown)
+        # Always recalculate all derived fields (including drawdown) to ensure correct values
         rows = self._recalculate_derived_fields(rows)
         
         # Write updated rows back to CSV
@@ -1080,7 +1072,7 @@ class TradingGUI:
             writer.writeheader()
             writer.writerows(rows)
         
-        print(f"Initialized drawdown values for {len(rows)} rows")
+        print(f"Recalculated drawdown values for {len(rows)} rows")
 
     def _load_open_positions(self) -> None:
         """Load open positions from CSV file (trades with empty result)."""
