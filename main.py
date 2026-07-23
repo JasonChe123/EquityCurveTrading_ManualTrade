@@ -1724,8 +1724,31 @@ class TradingGUI:
                 raise ValueError("Symbol is required")
             mt5_symbol = self.mt5_symbol_var.get().strip()
             self.contract = build_contract(self.config, symbol)
-            order_id = self.app.close_position(self.contract)
-            status = [f"IB #{order_id}"]
+            
+            status = []
+            
+            # Always record as demo trade
+            self.demo_status_var.set(
+                f"DEMO MODE - CLOSE {symbol}"
+            )
+            status.append("DEMO MODE")
+            
+            # Send IB close order only if checkbox is checked
+            if self.ib_send_var.get():
+                order_id = self.app.close_position(self.contract)
+                status.append(f"IB #{order_id}")
+            
+            # Send MT5 close order only if checkbox is checked
+            if self.mt5_send_var.get() and self.mt5_app.available and self.mt5_app.connected:
+                mt5_order_id = self.mt5_app.close_position(mt5_symbol or symbol)
+                status.append(f"MT5 #{mt5_order_id}")
+            
+            # Send keyboard shortcut to tradovate.com if checkbox is checked
+            if self.tradovate_send_var.get():
+                self._send_tradovate_shortcut("CLOSE")
+            
+            # Record trade once after all orders are sent
+            remark = ", ".join(status)
             self._record_trade(
                 ticker=symbol,
                 open_price=self.app.last_close,
@@ -1734,11 +1757,9 @@ class TradingGUI:
                 quantity=0,
                 side="CLOSE",
                 demo_value="LIVE",
-                remark=f"Close position IB #{order_id}"
+                remark=remark
             )
-            if self.mt5_app.available and self.mt5_app.connected:
-                mt5_order_id = self.mt5_app.close_position(mt5_symbol or symbol)
-                status.append(f"MT5 #{mt5_order_id}")
+            
             self.status_var.set("Sent close-all order: " + ", ".join(status))
         except Exception as exc:
             messagebox.showerror("Close error", str(exc))
