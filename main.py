@@ -699,6 +699,8 @@ class TradingGUI:
         self.chart_window = None
         self.chart_canvas = None
         self.chart_sec_ax = None
+        self.chart_cursor = None
+        self.chart_data = None
 
     def _show_chart_window(self) -> None:
         """Show or update the equity chart window."""
@@ -710,6 +712,9 @@ class TradingGUI:
             self.chart_canvas = FigureCanvasTkAgg(self.chart_figure, master=self.chart_window)
             self.chart_canvas.draw()
             self.chart_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            
+            # Connect mouse motion event for cursor
+            self.chart_canvas.mpl_connect('motion_notify_event', self._on_chart_hover)
         
         self._update_chart()
 
@@ -795,8 +800,71 @@ class TradingGUI:
             sec_ax.xaxis.set_major_locator(MaxNLocator(nbins=10, integer=True))
             self.chart_sec_ax = sec_ax
         
+        # Store chart data for cursor
+        self.chart_data = {
+            'trade_numbers': trade_numbers,
+            'dates': dates,
+            'demo_values': demo_values,
+            'sma_38_values': sma_38_values,
+            'equity_curve_values': equity_curve_values,
+            'drawdown_values': drawdown_values
+        }
+        
         if self.chart_canvas:
             self.chart_canvas.draw()
+
+    def _on_chart_hover(self, event) -> None:
+        """Handle mouse hover event on chart to show data tooltip."""
+        if event.inaxes != self.chart_ax or self.chart_data is None:
+            return
+        
+        trade_numbers = self.chart_data['trade_numbers']
+        dates = self.chart_data['dates']
+        demo_values = self.chart_data['demo_values']
+        sma_38_values = self.chart_data['sma_38_values']
+        equity_curve_values = self.chart_data['equity_curve_values']
+        drawdown_values = self.chart_data['drawdown_values']
+        
+        if not trade_numbers:
+            return
+        
+        # Find nearest trade number
+        xdata = event.xdata
+        if xdata is None:
+            return
+        
+        import numpy as np
+        idx = (np.abs(np.array(trade_numbers) - xdata)).argmin()
+        
+        # Remove existing cursor annotation
+        if self.chart_cursor:
+            self.chart_cursor.remove()
+            self.chart_cursor = None
+        
+        # Create tooltip text
+        tooltip_text = f"Trade #{trade_numbers[idx]}\nDate: {dates[idx]}\n"
+        if idx < len(demo_values):
+            tooltip_text += f"Demo Value: {demo_values[idx]:.2f}\n"
+        if idx < len(sma_38_values):
+            tooltip_text += f"38 SMA: {sma_38_values[idx]:.2f}\n"
+        if idx < len(equity_curve_values):
+            tooltip_text += f"Equity Curve: {equity_curve_values[idx]:.2f}\n"
+        if idx < len(drawdown_values):
+            tooltip_text += f"Drawdown: {drawdown_values[idx]:.2f}"
+        
+        # Add cursor annotation
+        y_value = demo_values[idx] if idx < len(demo_values) else 0
+        self.chart_cursor = self.chart_ax.annotate(
+            tooltip_text,
+            xy=(trade_numbers[idx], y_value),
+            xytext=(20, 20),
+            textcoords='offset points',
+            bbox=dict(boxstyle='round,pad=0.5', fc='yellow', alpha=0.7),
+            arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'),
+            fontsize=9
+        )
+        
+        self.chart_canvas.draw_idle()
 
     def _update_reverse_order_checkbox(self) -> None:
         """Update Reverse Order checkbox based on demo value vs 38 SMA."""
