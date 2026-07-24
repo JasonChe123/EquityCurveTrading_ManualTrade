@@ -1641,7 +1641,14 @@ class TradingGUI:
                 self.contract = self._cached_contract
                 min_tick = self._cached_min_tick
             
-            take_profit, stop_loss = self._ib_bracket_prices(action, distance_points)
+            # Determine the actual action to use (may be reversed)
+            if self.reverse_order_var.get():
+                actual_action = "SELL" if action == "BUY" else "BUY"
+            else:
+                actual_action = action
+            
+            # Calculate TP/SL based on the actual action being executed
+            take_profit, stop_loss = self._ib_bracket_prices(actual_action, distance_points)
             take_profit = round(take_profit / min_tick) * min_tick
             stop_loss = round(stop_loss / min_tick) * min_tick
             
@@ -1658,17 +1665,9 @@ class TradingGUI:
             # Send IB order only if checkbox is checked
             if self.ib_send_var.get():
                 self.demo_status_var.set("")
-                if self.reverse_order_var.get():
-                    ib_action = "SELL" if action == "BUY" else "BUY"
-                    # Recalculate TP/SL for reversed action
-                    take_profit, stop_loss = self._ib_bracket_prices(ib_action, distance_points)
-                    take_profit = round(take_profit / min_tick) * min_tick
-                    stop_loss = round(stop_loss / min_tick) * min_tick
-                else:
-                    ib_action = action
                 order_id = self.app.place_bracket_market_order(
                     self.contract,
-                    ib_action,
+                    actual_action,
                     quantity,
                     take_profit,
                     stop_loss,
@@ -1677,27 +1676,19 @@ class TradingGUI:
             
             # Send MT5 order only if checkbox is checked
             if self.mt5_send_var.get() and self.mt5_app.available and self.mt5_app.connected:
-                if self.reverse_order_var.get():
-                    mt5_action = "SELL" if action == "BUY" else "BUY"
-                else:
-                    mt5_action = action
                 mt5_order_id = self.mt5_app.place_bracket_market_order(
                     mt5_symbol or symbol,
-                    mt5_action,
+                    actual_action,
                     float(quantity),
                     mt5_contract_size,
                     distance_points,
                     distance_points,
                 )
-                status.append(f"MT5 #{mt5_order_id} ({mt5_action})")
+                status.append(f"MT5 #{mt5_order_id} ({actual_action})")
             
             # Send keyboard shortcut to tradovate.com if checkbox is checked
             if self.tradovate_send_var.get():
-                if self.reverse_order_var.get():
-                    tradovate_action = "SELL" if action == "BUY" else "BUY"
-                else:
-                    tradovate_action = action
-                self._send_tradovate_shortcut(tradovate_action)
+                self._send_tradovate_shortcut(actual_action)
             
             # Record trade once after all orders are sent
             remark = ", ".join(status)
