@@ -12,6 +12,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import random
 import time
+import numpy as np
 
 try:
     import pywinauto
@@ -701,6 +702,7 @@ class TradingGUI:
         self.chart_sec_ax = None
         self.chart_cursor = None
         self.chart_data = None
+        self._hover_event_connected = False
 
     def _show_chart_window(self) -> None:
         """Show or update the equity chart window."""
@@ -713,8 +715,10 @@ class TradingGUI:
             self.chart_canvas.draw()
             self.chart_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
             
-            # Connect mouse motion event for cursor
-            self.chart_canvas.mpl_connect('motion_notify_event', self._on_chart_hover)
+            # Connect mouse motion event for cursor (only once)
+            if not self._hover_event_connected:
+                self.chart_canvas.mpl_connect('motion_notify_event', self._on_chart_hover)
+                self._hover_event_connected = True
         
         self._update_chart()
 
@@ -833,12 +837,14 @@ class TradingGUI:
         if xdata is None:
             return
         
-        import numpy as np
         idx = (np.abs(np.array(trade_numbers) - xdata)).argmin()
         
         # Remove existing cursor annotation
         if self.chart_cursor:
-            self.chart_cursor.remove()
+            try:
+                self.chart_cursor.remove()
+            except:
+                pass
             self.chart_cursor = None
         
         # Create tooltip text
@@ -864,7 +870,7 @@ class TradingGUI:
             fontsize=9
         )
         
-        self.chart_canvas.draw_idle()
+        self.chart_canvas.draw()
 
     def _update_reverse_order_checkbox(self) -> None:
         """Update Reverse Order checkbox based on demo value vs 38 SMA."""
