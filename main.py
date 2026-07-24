@@ -1658,9 +1658,13 @@ class TradingGUI:
             # Send IB order only if checkbox is checked
             if self.ib_send_var.get():
                 self.demo_status_var.set("")
+                if self.reverse_order_var.get():
+                    ib_action = "SELL" if action == "BUY" else "BUY"
+                else:
+                    ib_action = action
                 order_id = self.app.place_bracket_market_order(
                     self.contract,
-                    action,
+                    ib_action,
                     quantity,
                     take_profit,
                     stop_loss,
