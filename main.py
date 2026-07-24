@@ -1660,6 +1660,10 @@ class TradingGUI:
                 self.demo_status_var.set("")
                 if self.reverse_order_var.get():
                     ib_action = "SELL" if action == "BUY" else "BUY"
+                    # Recalculate TP/SL for reversed action
+                    take_profit, stop_loss = self._ib_bracket_prices(ib_action, distance_points)
+                    take_profit = round(take_profit / min_tick) * min_tick
+                    stop_loss = round(stop_loss / min_tick) * min_tick
                 else:
                     ib_action = action
                 order_id = self.app.place_bracket_market_order(
