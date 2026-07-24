@@ -1641,16 +1641,21 @@ class TradingGUI:
                 self.contract = self._cached_contract
                 min_tick = self._cached_min_tick
             
-            # Determine the actual action to use (may be reversed)
+            # Determine the actual action to use for live trading (may be reversed)
             if self.reverse_order_var.get():
                 actual_action = "SELL" if action == "BUY" else "BUY"
             else:
                 actual_action = action
             
-            # Calculate TP/SL based on the actual action being executed
-            take_profit, stop_loss = self._ib_bracket_prices(actual_action, distance_points)
-            take_profit = round(take_profit / min_tick) * min_tick
-            stop_loss = round(stop_loss / min_tick) * min_tick
+            # Calculate TP/SL for demo trade (based on original action)
+            demo_tp, demo_sl = self._ib_bracket_prices(action, distance_points)
+            demo_tp = round(demo_tp / min_tick) * min_tick
+            demo_sl = round(demo_sl / min_tick) * min_tick
+            
+            # Calculate TP/SL for live trading (based on actual action)
+            live_tp, live_sl = self._ib_bracket_prices(actual_action, distance_points)
+            live_tp = round(live_tp / min_tick) * min_tick
+            live_sl = round(live_sl / min_tick) * min_tick
             
             status = []
             
@@ -1658,7 +1663,7 @@ class TradingGUI:
             demo_price = self.app.last_close
             self.demo_status_var.set(
                 f"DEMO MODE - {action} {quantity} {symbol} | "
-                f"Executed: {demo_price:.2f} | TP: {take_profit:.2f} | SL: {stop_loss:.2f}"
+                f"Executed: {demo_price:.2f} | TP: {demo_tp:.2f} | SL: {demo_sl:.2f}"
             )
             status.append("DEMO MODE")
             
@@ -1669,8 +1674,8 @@ class TradingGUI:
                     self.contract,
                     actual_action,
                     quantity,
-                    take_profit,
-                    stop_loss,
+                    live_tp,
+                    live_sl,
                 )
                 status.append(f"IB #{order_id}")
             
@@ -1695,8 +1700,8 @@ class TradingGUI:
             self._record_trade(
                 ticker=symbol,
                 open_price=self.app.last_close,
-                take_profit=take_profit,
-                stoploss=stop_loss,
+                take_profit=demo_tp,
+                stoploss=demo_sl,
                 quantity=quantity,
                 side=action,
                 demo_value="LIVE",
