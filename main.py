@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import sys
 import threading
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -618,6 +619,11 @@ class TradingGUI:
             command=self._connect_browser,
         )
         self.reconnect_browser_button.grid(row=0, column=3, padx=(8, 0))
+        ttk.Button(
+            button_row,
+            text="Restart App",
+            command=self._restart_app,
+        ).grid(row=0, column=4, padx=(8, 0))
 
         ttk.Label(main, textvariable=self.atr_display_var).grid(row=5, column=0, columnspan=6, sticky="w", pady=(8, 0))
         ttk.Label(main, textvariable=self.demo_status_var).grid(row=6, column=0, columnspan=6, sticky="w", pady=(4, 0))
@@ -1793,14 +1799,27 @@ class TradingGUI:
         
         print(f"Updated {updated_count} open position(s) to CLOSED")
 
-    def _on_close(self) -> None:
+    def _restart_app(self) -> None:
+        """Restart the application to reconnect to IBTWS after connection loss."""
         try:
+            # Disconnect from IB and MT5 cleanly
             if self.app.isConnected():
                 self.app.disconnect()
             self.mt5_app.shutdown()
-        finally:
-            self.root.quit()
-            self.root.destroy()
+        except Exception as e:
+            print(f"Error during disconnect: {e}")
+        
+        # Restart the application using os.execv
+        print("Restarting application...")
+        self.root.quit()
+        self.root.destroy()
+        
+        # Get the current Python executable and script path
+        python = sys.executable
+        script = os.path.abspath(sys.argv[0])
+        
+        # Restart with the same arguments
+        os.execv(python, [python] + sys.argv)
 
 
 def main() -> int:
