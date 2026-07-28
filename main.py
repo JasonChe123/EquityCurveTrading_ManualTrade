@@ -1807,6 +1807,8 @@ class TradingGUI:
         finally:
             self.root.quit()
             self.root.destroy()
+            # Force exit to kill all threads and processes
+            os._exit(0)
 
     def _restart_app(self) -> None:
         """Restart the application to reconnect to IBTWS after connection loss."""
@@ -1828,7 +1830,12 @@ class TradingGUI:
         script = os.path.abspath(sys.argv[0])
         
         # Restart with the same arguments
-        os.execv(python, [python] + sys.argv)
+        try:
+            os.execv(python, [python] + sys.argv)
+        except Exception as e:
+            print(f"Error during restart: {e}")
+            # Force exit if restart fails
+            os._exit(0)
 
 
 def main() -> int:
