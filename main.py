@@ -570,6 +570,7 @@ class TradingGUI:
         self.reconnect_browser_button = None
         self._startup_time = datetime.now()
         self._allow_auto_update = False
+        self._allow_auto_reconnect = False
         self._cached_contract = None
         self._cached_min_tick = None
         self._cached_tradovate_tab = None
@@ -1478,8 +1479,12 @@ class TradingGUI:
         if not self._allow_auto_update and (datetime.now() - self._startup_time).total_seconds() > 30:
             self._allow_auto_update = True
 
-        # Check for IB disconnection and attempt auto-reconnect
-        if self.app.is_disconnected():
+        # Enable auto-reconnect after 60 seconds from startup to avoid reconnection attempts during initial connection
+        if not self._allow_auto_reconnect and (datetime.now() - self._startup_time).total_seconds() > 60:
+            self._allow_auto_reconnect = True
+
+        # Check for IB disconnection and attempt auto-reconnect (only after grace period)
+        if self._allow_auto_reconnect and self.app.is_disconnected():
             print("IB disconnection detected, attempting auto-reconnect...")
             if self._reconnect_ib():
                 # Re-request historical data after successful reconnection
