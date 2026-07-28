@@ -1660,7 +1660,7 @@ class TradingGUI:
             tradovate_tab.set_focus()
             time.sleep(random.random() * 0.2)
             send_keys("{ESC}")
-            send_keys("^%b")
+            send_keys("^b")
             print("Test: Sent Ctrl+B to tradovate.com")
         except Exception as e:
             print(f"Failed to send test Ctrl+B: {str(e)}")
