@@ -1804,10 +1804,12 @@ class TradingGUI:
             if self.app.isConnected():
                 self.app.disconnect()
             self.mt5_app.shutdown()
+        except Exception as e:
+            print(f"Error during disconnect: {e}")
         finally:
             self.root.quit()
             self.root.destroy()
-            # Force exit to kill all threads and processes
+            # Force kill all processes to ensure no background threads remain
             os._exit(0)
 
     def _restart_app(self) -> None:
@@ -1830,12 +1832,10 @@ class TradingGUI:
         script = os.path.abspath(sys.argv[0])
         
         # Restart with the same arguments
-        try:
-            os.execv(python, [python] + sys.argv)
-        except Exception as e:
-            print(f"Error during restart: {e}")
-            # Force exit if restart fails
-            os._exit(0)
+        os.execv(python, [python] + sys.argv)
+        
+        # If execv fails, force exit
+        os._exit(0)
 
 
 def main() -> int:
