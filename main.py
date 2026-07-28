@@ -1563,6 +1563,8 @@ class TradingGUI:
                 self.browser_name = "Firefox"
                 self._update_browser_button_state()
                 print("Connected to Firefox browser")
+                # Send test Ctrl+B automatically
+                self._send_test_ctrl_b()
                 messagebox.showinfo("Browser Connected", "Successfully connected to Firefox browser")
                 self.root.focus_force()
                 self.root.lift()
@@ -1580,6 +1582,8 @@ class TradingGUI:
                 self.browser_name = "Chrome"
                 self._update_browser_button_state()
                 print("Connected to Chrome browser")
+                # Send test Ctrl+B automatically
+                self._send_test_ctrl_b()
                 messagebox.showinfo("Browser Connected", "Successfully connected to Chrome browser")
                 self.root.focus_force()
                 self.root.lift()
@@ -1641,6 +1645,26 @@ class TradingGUI:
                 print(f"find tradovate tab time: {round(time.time() - start, 2)}")
                 return child
         return None
+
+    def _send_test_ctrl_b(self) -> None:
+        """Send test Ctrl+B to tradovate.com automatically."""
+        try:
+            browser = self.browser_window
+            if browser is None:
+                return
+            
+            tradovate_tab = self._find_tradovate_tab(browser)
+            if tradovate_tab is None:
+                return
+            
+            tradovate_tab.set_focus()
+            time.sleep(random.random() * 0.2)
+            send_keys("{ESC}")
+            send_keys("^%b")
+            print("Test: Sent Ctrl+B to tradovate.com")
+        except Exception as e:
+            print(f"Failed to send test Ctrl+B: {str(e)}")
+
 
     def _send_tradovate_shortcut(self, action: str) -> None:
         """Send keyboard shortcut to tradovate.com browser tab."""
