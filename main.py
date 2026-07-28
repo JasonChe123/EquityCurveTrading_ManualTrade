@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import csv
 import os
-import sys
 import threading
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -139,6 +138,10 @@ class IBConnectionApp(EWrapper, EClient):
         print(f"IB error {errorCode} on req {reqId}: {errorString}")
         if errorCode == 200:
             print("Check the expiry month and exchange on the futures contract.")
+        # Connection lost errors
+        if errorCode in [1100, 1101, 1102, 503, 504]:
+            print("IB connection lost or disconnected")
+            self.connected_event.clear()
 
     @property
     def next_valid_order_id(self) -> int | None:
@@ -556,6 +559,8 @@ class TradingGUI:
         self._cached_contract = None
         self._cached_min_tick = None
         self._cached_tradovate_tab = None
+        self._ib_connected = True
+        self._ui_widgets = []
 
         self._init_trade_record()
         self._init_chart()
@@ -576,54 +581,73 @@ class TradingGUI:
         main = ttk.Frame(self.root, padding=12)
         main.grid(row=0, column=0, sticky="nsew")
 
-        ttk.Checkbutton(main, text="Reverse Order", variable=self.reverse_order_var).grid(row=0, column=0, sticky="w")
+        reverse_order_cb = ttk.Checkbutton(main, text="Reverse Order", variable=self.reverse_order_var)
+        reverse_order_cb.grid(row=0, column=0, sticky="w")
+        self._ui_widgets.append(reverse_order_cb)
         ttk.Label(main, text="ATR Mult").grid(row=0, column=1, sticky="w")
-        ttk.Entry(main, textvariable=self.atr_var, width=12).grid(row=0, column=2, sticky="w")
+        atr_entry = ttk.Entry(main, textvariable=self.atr_var, width=12)
+        atr_entry.grid(row=0, column=2, sticky="w")
+        self._ui_widgets.append(atr_entry)
 
-        ttk.Checkbutton(main, text="Send to IB", variable=self.ib_send_var).grid(row=1, column=0, sticky="w")
+        ib_send_cb = ttk.Checkbutton(main, text="Send to IB", variable=self.ib_send_var)
+        ib_send_cb.grid(row=1, column=0, sticky="w")
+        self._ui_widgets.append(ib_send_cb)
         ttk.Label(main, text="IB Symbol", width=8).grid(row=1, column=1, sticky="w")
         symbol_entry = ttk.Entry(main, textvariable=self.symbol_var, width=12)
         symbol_entry.grid(row=1, column=2, sticky="w")
         symbol_entry.bind('<Return>', lambda e: self._refresh_symbol_data())
+        self._ui_widgets.append(symbol_entry)
         ttk.Label(main, text="IB Qty").grid(row=1, column=3, sticky="w")
-        ttk.Entry(main, textvariable=self.qty_var, width=12).grid(row=1, column=4, sticky="w")
+        qty_entry = ttk.Entry(main, textvariable=self.qty_var, width=12)
+        qty_entry.grid(row=1, column=4, sticky="w")
+        self._ui_widgets.append(qty_entry)
 
-        ttk.Checkbutton(main, text="Send to MT5", variable=self.mt5_send_var).grid(row=2, column=0, sticky="w")
+        mt5_send_cb = ttk.Checkbutton(main, text="Send to MT5", variable=self.mt5_send_var)
+        mt5_send_cb.grid(row=2, column=0, sticky="w")
+        self._ui_widgets.append(mt5_send_cb)
         ttk.Label(main, text="MT5 Symbol", width=8).grid(row=2, column=1, sticky="w")
-        ttk.Entry(main, textvariable=self.mt5_symbol_var, width=12).grid(row=2, column=2, sticky="w")
+        mt5_symbol_entry = ttk.Entry(main, textvariable=self.mt5_symbol_var, width=12)
+        mt5_symbol_entry.grid(row=2, column=2, sticky="w")
+        self._ui_widgets.append(mt5_symbol_entry)
         ttk.Label(main, text="MT5 Contract Size").grid(row=2, column=3, sticky="w")
-        ttk.Entry(main, textvariable=self.mt5_contract_size_var, width=12).grid(row=2, column=4, sticky="w")
+        mt5_contract_size_entry = ttk.Entry(main, textvariable=self.mt5_contract_size_var, width=12)
+        mt5_contract_size_entry.grid(row=2, column=4, sticky="w")
+        self._ui_widgets.append(mt5_contract_size_entry)
 
-        ttk.Checkbutton(main, text="Send to Tradovate", variable=self.tradovate_send_var).grid(row=3, column=0, sticky="w")
+        tradovate_send_cb = ttk.Checkbutton(main, text="Send to Tradovate", variable=self.tradovate_send_var)
+        tradovate_send_cb.grid(row=3, column=0, sticky="w")
+        self._ui_widgets.append(tradovate_send_cb)
 
         button_row = ttk.Frame(main)
         button_row.grid(row=4, column=0, columnspan=6, sticky="we", pady=(12, 8))
-        ttk.Button(
+        buy_button = ttk.Button(
             button_row,
             text="Buy",
             command=lambda: self._send_order("BUY"),
-        ).grid(row=0, column=0, padx=(0, 8))
-        ttk.Button(
+        )
+        buy_button.grid(row=0, column=0, padx=(0, 8))
+        self._ui_widgets.append(buy_button)
+        sell_button = ttk.Button(
             button_row,
             text="Sell",
             command=lambda: self._send_order("SELL"),
-        ).grid(row=0, column=1, padx=(0, 8))
-        ttk.Button(
+        )
+        sell_button.grid(row=0, column=1, padx=(0, 8))
+        self._ui_widgets.append(sell_button)
+        close_all_button = ttk.Button(
             button_row,
             text="Close All",
             command=self._close_all,
-        ).grid(row=0, column=2)
+        )
+        close_all_button.grid(row=0, column=2)
+        self._ui_widgets.append(close_all_button)
         self.reconnect_browser_button = ttk.Button(
             button_row,
             text="Reconnect Browser",
             command=self._connect_browser,
         )
         self.reconnect_browser_button.grid(row=0, column=3, padx=(8, 0))
-        ttk.Button(
-            button_row,
-            text="Restart App",
-            command=self._restart_app,
-        ).grid(row=0, column=4, padx=(8, 0))
+        self._ui_widgets.append(self.reconnect_browser_button)
 
         ttk.Label(main, textvariable=self.atr_display_var).grid(row=5, column=0, columnspan=6, sticky="w", pady=(8, 0))
         ttk.Label(main, textvariable=self.demo_status_var).grid(row=6, column=0, columnspan=6, sticky="w", pady=(4, 0))
@@ -680,10 +704,32 @@ class TradingGUI:
         self.result_var = tk.StringVar(value="")
         result_dropdown = ttk.Combobox(main, textvariable=self.result_var, values=["", "TP", "SL"], state="readonly", width=10)
         result_dropdown.grid(row=10, column=0, sticky="w", pady=(8, 0))
-        ttk.Button(main, text="Update Result", command=self._update_selected_result).grid(row=10, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        self._ui_widgets.append(result_dropdown)
+        update_result_button = ttk.Button(main, text="Update Result", command=self._update_selected_result)
+        update_result_button.grid(row=10, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        self._ui_widgets.append(update_result_button)
 
         # Chart button
-        ttk.Button(main, text="Show Equity Chart", command=self._show_chart_window).grid(row=11, column=0, columnspan=6, sticky="w", pady=(12, 0))
+        chart_button = ttk.Button(main, text="Show Equity Chart", command=self._show_chart_window)
+        chart_button.grid(row=11, column=0, columnspan=6, sticky="w", pady=(12, 0))
+        self._ui_widgets.append(chart_button)
+
+    def _set_ui_widgets_state(self, state: str) -> None:
+        """Enable or disable all UI widgets."""
+        for widget in self._ui_widgets:
+            try:
+                widget.config(state=state)
+            except:
+                pass  # Some widgets may not support state
+
+    def _check_ib_connection(self) -> bool:
+        """Check if IB connection is still active."""
+        if not self.app.isConnected():
+            return False
+        # Also check if connected_event is still set (it gets cleared on disconnection)
+        if not self.app.connected_event.is_set():
+            return False
+        return True
 
     def _init_trade_record(self) -> None:
         self.trade_record_dir = "trade_record"
@@ -1428,6 +1474,24 @@ class TradingGUI:
         self.status_var.set("Loading historical bars...")
 
     def _poll_status(self) -> None:
+        # Check IB connection status
+        ib_connected = self._check_ib_connection()
+        
+        if ib_connected and not self._ib_connected:
+            # IB reconnected
+            self._ib_connected = True
+            self._set_ui_widgets_state("normal")
+            self.live_status_label.config(fg="green")
+            print("IB reconnected")
+        elif not ib_connected and self._ib_connected:
+            # IB disconnected
+            self._ib_connected = False
+            self._set_ui_widgets_state("disabled")
+            self.status_var.set("DISCONNECTED - IB TWS closed or restarted")
+            self.live_status_label.config(fg="red")
+            self.atr_display_var.set("ATR: --")
+            print("IB disconnected")
+        
         atr = self.app.last_atr
         close = self.app.last_close
         try:
@@ -1439,7 +1503,7 @@ class TradingGUI:
         if not self._allow_auto_update and (datetime.now() - self._startup_time).total_seconds() > 30:
             self._allow_auto_update = True
 
-        if atr > 0 and close > 0:
+        if self._ib_connected and atr > 0 and close > 0:
             self.atr_display_var.set(f"Last close: {close:.2f}   ATR(14): {atr:.2f}   ATR x mult: {atr * atr_mult:.2f}")
             self.status_var.set("Live")
             
@@ -1447,8 +1511,12 @@ class TradingGUI:
             hit_positions = self._check_tp_sl_hits(close)
             for position, result in hit_positions:
                 self._auto_update_position_result(position, result)
+        elif not self._ib_connected:
+            # Keep showing disconnected status
+            pass
         else:
             self.atr_display_var.set("ATR: --")
+            self.status_var.set("Loading historical bars...")
 
         # Check browser status every 1 minute (120 iterations of 500ms)
         self._browser_check_counter += 1
@@ -1804,38 +1872,9 @@ class TradingGUI:
             if self.app.isConnected():
                 self.app.disconnect()
             self.mt5_app.shutdown()
-        except Exception as e:
-            print(f"Error during disconnect: {e}")
         finally:
             self.root.quit()
             self.root.destroy()
-            # Force kill all processes to ensure no background threads remain
-            os._exit(0)
-
-    def _restart_app(self) -> None:
-        """Restart the application to reconnect to IBTWS after connection loss."""
-        try:
-            # Disconnect from IB and MT5 cleanly
-            if self.app.isConnected():
-                self.app.disconnect()
-            self.mt5_app.shutdown()
-        except Exception as e:
-            print(f"Error during disconnect: {e}")
-        
-        # Restart the application using os.execv
-        print("Restarting application...")
-        self.root.quit()
-        self.root.destroy()
-        
-        # Get the current Python executable and script path
-        python = sys.executable
-        script = os.path.abspath(sys.argv[0])
-        
-        # Restart with the same arguments
-        os.execv(python, [python] + sys.argv)
-        
-        # If execv fails, force exit
-        os._exit(0)
 
 
 def main() -> int:
