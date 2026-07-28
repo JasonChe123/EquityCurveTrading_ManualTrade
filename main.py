@@ -555,7 +555,6 @@ class TradingGUI:
         self._cached_contract = None
         self._cached_min_tick = None
         self._cached_tradovate_tab = None
-        self._reconnecting = False
 
         self._init_trade_record()
         self._init_chart()
@@ -1422,56 +1421,6 @@ class TradingGUI:
         )
         self.status_var.set("Loading historical bars...")
 
-    def _reconnect_ib(self) -> None:
-        """Reconnect to IB in background thread."""
-        if self._reconnecting:
-            return
-        
-        self._reconnecting = True
-        self.root.after(0, lambda: self.status_var.set("Reconnecting to IB..."))
-        
-        try:
-            # Disconnect if connected
-            if self.app.isConnected():
-                self.app.disconnect()
-            
-            # Clear connection event
-            self.app.connected_event.clear()
-            
-            # Reconnect
-            self.app.connect(self.config.host, self.config.port, self.config.client_id)
-            
-            # Wait for connection
-            if self.app.connected_event.wait(self.config.timeout):
-                self.root.after(0, lambda: self.status_var.set("Reconnected - Loading data..."))
-                
-                # Reload data
-                self.app.request_positions(self.config.timeout)
-                min_tick = self.app.request_contract_min_tick(2002, self.contract, self.config.timeout)
-                self._cached_min_tick = min_tick
-                
-                self.app.reqHistoricalData(
-                    2001,
-                    self.contract,
-                    "",
-                    self.config.duration,
-                    self.config.bar_size,
-                    self.config.what_to_show,
-                    self.config.use_rth,
-                    1,
-                    self.config.keep_up_to_date,
-                    [],
-                )
-                print("IB reconnected successfully")
-            else:
-                self.root.after(0, lambda: self.status_var.set("Reconnect failed"))
-                print("IB reconnect failed")
-        except Exception as e:
-            self.root.after(0, lambda: self.status_var.set("Reconnect error"))
-            print(f"IB reconnect error: {e}")
-        finally:
-            self._reconnecting = False
-
     def _poll_status(self) -> None:
         atr = self.app.last_atr
         close = self.app.last_close
@@ -1484,15 +1433,9 @@ class TradingGUI:
         if not self._allow_auto_update and (datetime.now() - self._startup_time).total_seconds() > 30:
             self._allow_auto_update = True
 
-        # Check IB connection and auto-reconnect if needed
-        if not self.app.isConnected() and not self._reconnecting:
-            print("IB disconnected, triggering auto-reconnect...")
-            threading.Thread(target=self._reconnect_ib, daemon=True).start()
-
         if atr > 0 and close > 0:
             self.atr_display_var.set(f"Last close: {close:.2f}   ATR(14): {atr:.2f}   ATR x mult: {atr * atr_mult:.2f}")
-            if not self._reconnecting:
-                self.status_var.set("Live")
+            self.status_var.set("Live")
             
             # Check if current price hits TP/SL for any open positions
             hit_positions = self._check_tp_sl_hits(close)
