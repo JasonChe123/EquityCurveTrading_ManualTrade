@@ -1799,6 +1799,15 @@ class TradingGUI:
         
         print(f"Updated {updated_count} open position(s) to CLOSED")
 
+    def _on_close(self) -> None:
+        try:
+            if self.app.isConnected():
+                self.app.disconnect()
+            self.mt5_app.shutdown()
+        finally:
+            self.root.quit()
+            self.root.destroy()
+
     def _restart_app(self) -> None:
         """Restart the application to reconnect to IBTWS after connection loss."""
         try:
