@@ -66,14 +66,10 @@ class IBConnectionApp(EWrapper, EClient):
         self._last_atr = 0.0
         self._last_close = 0.0
         self._order_lock = threading.Lock()
-        self._was_connected = False
-        self._disconnection_detected = False
 
     def nextValidId(self, orderId: int) -> None:
         self._next_valid_order_id = orderId
         self.connected_event.set()
-        self._was_connected = True
-        self._disconnection_detected = False
         print(f"Connected. Next valid order id: {orderId}")
 
     def historicalData(self, reqId: int, bar: BarData) -> None:
@@ -142,10 +138,6 @@ class IBConnectionApp(EWrapper, EClient):
         print(f"IB error {errorCode} on req {reqId}: {errorString}")
         if errorCode == 200:
             print("Check the expiry month and exchange on the futures contract.")
-        # Detect disconnection errors
-        if errorCode in [502, 503, 504, 1100, 2100, 2101, 2102, 2103, 2104, 2105, 2106]:
-            self._disconnection_detected = True
-            print(f"IB disconnection detected (error {errorCode})")
 
     @property
     def next_valid_order_id(self) -> int | None:
@@ -162,16 +154,6 @@ class IBConnectionApp(EWrapper, EClient):
     @property
     def min_tick(self) -> float | None:
         return self._min_tick
-
-    def is_disconnected(self) -> bool:
-        """Check if IB connection is lost."""
-        if not self._was_connected:
-            return False
-        if self._disconnection_detected:
-            return True
-        if not self.isConnected():
-            return True
-        return False
 
     def request_contract_min_tick(self, req_id: int, contract: Contract, timeout: float) -> float:
         self._min_tick = None
@@ -570,8 +552,6 @@ class TradingGUI:
         self.reconnect_browser_button = None
         self._startup_time = datetime.now()
         self._allow_auto_update = False
-        self._allow_auto_reconnect = False
-        self._reconnecting = False
         self._cached_contract = None
         self._cached_min_tick = None
         self._cached_tradovate_tab = None
@@ -1441,74 +1421,6 @@ class TradingGUI:
         )
         self.status_var.set("Loading historical bars...")
 
-    def _reconnect_ib(self) -> bool:
-        """Attempt to reconnect to IB TWS/Gateway."""
-        self._reconnecting = True
-        try:
-            print("Attempting to reconnect to IB...")
-            self.status_var.set("Reconnecting to IB...")
-
-            # Disconnect if still connected
-            if self.app.isConnected():
-                self.app.disconnect()
-
-            # Clear connection event
-            self.app.connected_event.clear()
-
-            # Reconnect with same config
-            self.app.connect(self.config.host, self.config.port, self.config.client_id)
-
-            # Wait for connection
-            if not self.app.connected_event.wait(self.config.timeout):
-                print("Reconnection timed out")
-                self._reconnecting = False
-                return False
-
-            print("Successfully reconnected to IB")
-            self._reconnecting = False
-            return True
-        except Exception as e:
-            print(f"Reconnection failed: {e}")
-            self._reconnecting = False
-            return False
-
-    def _reconnect_ib_thread(self) -> None:
-        """Background thread method for reconnection to avoid blocking GUI."""
-        if self._reconnect_ib():
-            # Re-request historical data after successful reconnection
-            try:
-                symbol = self.symbol_var.get().strip() or self.config.symbol
-                self.contract = build_contract(self.config, symbol)
-                self.app.request_positions(self.config.timeout)
-                min_tick = self.app.request_contract_min_tick(2002, self.contract, self.config.timeout)
-                self._cached_contract = self.contract
-                self._cached_min_tick = min_tick
-                print(
-                    f"Re-resolved contract: symbol={self.contract.symbol} secType={self.contract.secType} "
-                    f"expiry={self.contract.lastTradeDateOrContractMonth}"
-                )
-                self.app.reqHistoricalData(
-                    2001,
-                    self.contract,
-                    "",
-                    self.config.duration,
-                    self.config.bar_size,
-                    self.config.what_to_show,
-                    self.config.use_rth,
-                    1,
-                    self.config.keep_up_to_date,
-                    [],
-                )
-                # Update UI from main thread
-                self.root.after(0, lambda: self.status_var.set("Reconnected - Loading historical bars..."))
-                self.root.after(0, lambda: self.atr_display_var.set("ATR: --"))
-            except Exception as e:
-                print(f"Failed to re-request historical data after reconnection: {e}")
-                self.root.after(0, lambda: self.status_var.set("Reconnected - Data request failed"))
-        else:
-            self.root.after(0, lambda: self.status_var.set("Reconnection failed"))
-            self.root.after(0, lambda: self.live_status_label.config(fg="red"))
-
     def _poll_status(self) -> None:
         atr = self.app.last_atr
         close = self.app.last_close
@@ -1521,20 +1433,9 @@ class TradingGUI:
         if not self._allow_auto_update and (datetime.now() - self._startup_time).total_seconds() > 30:
             self._allow_auto_update = True
 
-        # Enable auto-reconnect after 60 seconds from startup to avoid reconnection attempts during initial connection
-        if not self._allow_auto_reconnect and (datetime.now() - self._startup_time).total_seconds() > 60:
-            self._allow_auto_reconnect = True
-
-        # Check for IB disconnection and attempt auto-reconnect (only after grace period and not already reconnecting)
-        if self._allow_auto_reconnect and not self._reconnecting and self.app.is_disconnected():
-            print("IB disconnection detected, attempting auto-reconnect...")
-            # Run reconnection in background thread to avoid blocking GUI
-            thread = threading.Thread(target=self._reconnect_ib_thread, daemon=True)
-            thread.start()
-        elif atr > 0 and close > 0:
+        if atr > 0 and close > 0:
             self.atr_display_var.set(f"Last close: {close:.2f}   ATR(14): {atr:.2f}   ATR x mult: {atr * atr_mult:.2f}")
             self.status_var.set("Live")
-            self.live_status_label.config(fg="green")
             
             # Check if current price hits TP/SL for any open positions
             hit_positions = self._check_tp_sl_hits(close)
@@ -1588,9 +1489,6 @@ class TradingGUI:
                 self.browser_name = "Firefox"
                 self._update_browser_button_state()
                 print("Connected to Firefox browser")
-                # Send test key Ctrl+B for Tradovate
-                send_keys("^b")
-                print("Sent test key Ctrl+B to Firefox")
                 messagebox.showinfo("Browser Connected", "Successfully connected to Firefox browser")
                 self.root.focus_force()
                 self.root.lift()
@@ -1608,9 +1506,6 @@ class TradingGUI:
                 self.browser_name = "Chrome"
                 self._update_browser_button_state()
                 print("Connected to Chrome browser")
-                # Send test key Ctrl+B for Tradovate
-                send_keys("^b")
-                print("Sent test key Ctrl+B to Chrome")
                 messagebox.showinfo("Browser Connected", "Successfully connected to Chrome browser")
                 self.root.focus_force()
                 self.root.lift()
