@@ -708,6 +708,9 @@ class TradingGUI:
         update_result_button = ttk.Button(main, text="Update Result", command=self._update_selected_result)
         update_result_button.grid(row=10, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
         self._ui_widgets.append(update_result_button)
+        delete_button = ttk.Button(main, text="Delete Selected", command=self._delete_selected_trades)
+        delete_button.grid(row=10, column=2, sticky="w", padx=(8, 0), pady=(8, 0))
+        self._ui_widgets.append(delete_button)
 
         # Chart button
         chart_button = ttk.Button(main, text="Show Equity Chart", command=self._show_chart_window)
@@ -1373,6 +1376,72 @@ class TradingGUI:
         self._update_reverse_order_checkbox()
         
         messagebox.showinfo("Success", f"Updated {updated_count} trade(s) to {result_value}")
+
+    def _delete_selected_trades(self) -> None:
+        """Delete the selected trade(s) from the CSV file."""
+        selected_items = self.positions_tree.selection()
+        if not selected_items:
+            messagebox.showwarning("No Selection", "Please select a trade(s) from the table first.")
+            return
+        
+        # Confirm deletion
+        if not messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete {len(selected_items)} trade(s)?"):
+            return
+        
+        # Collect selected trade identifiers
+        selected_trades = []
+        for item in selected_items:
+            item_values = self.positions_tree.item(item)['values']
+            selected_trades.append({
+                'date': item_values[0],
+                'time': item_values[1],
+                'ticker': item_values[2]
+            })
+        
+        # Read all rows from CSV
+        rows = []
+        deleted_count = 0
+        with open(self.trade_record_file, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames
+            for row in reader:
+                # Check if this row matches any selected trade
+                should_delete = False
+                for selected in selected_trades:
+                    if (row.get('date') == selected['date'] and 
+                        row.get('create_time') == selected['time'] and 
+                        row.get('ticker') == selected['ticker']):
+                        should_delete = True
+                        deleted_count += 1
+                        break
+                
+                if not should_delete:
+                    rows.append(row)
+        
+        if deleted_count == 0:
+            messagebox.showerror("Error", "Could not find the selected trade(s) in the CSV file.")
+            return
+        
+        # Recalculate all derived fields after deletion
+        rows = self._recalculate_derived_fields(rows)
+        
+        # Write updated rows back to CSV
+        with open(self.trade_record_file, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        
+        # Refresh the table
+        self._load_open_positions()
+        
+        # Update chart if window is open
+        if self.chart_window is not None and tk.Toplevel.winfo_exists(self.chart_window):
+            self.root.after(100, self._update_chart)
+        
+        # Update reverse order checkbox based on latest demo value vs 38 SMA
+        self._update_reverse_order_checkbox()
+        
+        messagebox.showinfo("Success", f"Deleted {deleted_count} trade(s)")
 
     def _refresh_symbol_data(self) -> None:
         """Refresh data from IB when symbol changes."""
