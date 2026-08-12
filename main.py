@@ -820,13 +820,13 @@ class TradingGUI:
         self.chart_ax.grid(True)
         
         if demo_values:
-            self.chart_ax.plot(trade_numbers, demo_values, label='Demo Value (Cumulative P/L)', color='blue', linewidth=2)
+            self.chart_ax.plot(trade_numbers, demo_values, label='Demo Value (Cumulative P/L)', color='blue', linewidth=1)
         
         if sma_38_values:
-            self.chart_ax.plot(trade_numbers, sma_38_values, label='38 SMA', color='orange', linewidth=2, linestyle='-')
+            self.chart_ax.plot(trade_numbers, sma_38_values, label='38 SMA', color='orange', linewidth=1, linestyle='-')
         
         if equity_curve_values:
-            self.chart_ax.plot(trade_numbers, equity_curve_values, label='Equity Curve Trading Value', color='green', linewidth=2)
+            self.chart_ax.plot(trade_numbers, equity_curve_values, label='Equity Curve Trading Value', color='green', linewidth=1)
         
         if drawdown_values:
             # Plot drawdown as grey area chart
@@ -1733,7 +1733,6 @@ class TradingGUI:
             print("Test: Sent Ctrl+B to tradovate.com")
         except Exception as e:
             print(f"Failed to send test Ctrl+B: {str(e)}")
-
 
     def _send_tradovate_shortcut(self, action: str) -> None:
         """Send keyboard shortcut to tradovate.com browser tab."""
