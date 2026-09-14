@@ -485,7 +485,7 @@ def third_friday(year: int, month: int) -> date:
 
 def front_month_expiry(today: date | None = None) -> str:
     today = today or date.today()
-    roll_cutoff = timedelta(days=2)
+    roll_cutoff = timedelta(days=4)
     for year in (today.year, today.year + 1):
         for month in (3, 6, 9, 12):
             if year == today.year and month < today.month:
