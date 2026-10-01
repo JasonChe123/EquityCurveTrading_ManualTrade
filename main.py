@@ -1868,7 +1868,7 @@ class TradingGUI:
                 open_price=self.app.last_close,
                 take_profit=demo_tp,
                 stoploss=demo_sl,
-                quantity=quantity,
+                quantity=1,  # Always use 1 for demo trade in Open Position
                 side=action,
                 demo_value="LIVE",
                 remark=remark
