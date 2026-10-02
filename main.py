@@ -1850,7 +1850,7 @@ class TradingGUI:
                 mt5_order_id = self.mt5_app.place_bracket_market_order(
                     mt5_symbol or symbol,
                     actual_action,
-                    float(quantity),
+                    1.0,  # Use 1.0 so final volume = MT5 Contract Size (method multiplies by contract_size)
                     mt5_contract_size,
                     distance_points,
                     distance_points,
