@@ -1082,14 +1082,14 @@ class TradingGUI:
         
         # Calculate is_trade for each row
         for i, row in enumerate(rows):
-            # is_trade: 1 if previous signal > previous 5_sma, else -1
+            # is_trade: 1 if previous signal >= previous 5_sma, else -1
             if i == 0:
                 is_trade = -1  # No previous signal for first row
             else:
                 prev_signal = signals[i-1]
                 prev_5_sma_str = rows[i-1].get('5_sma', 0)
                 prev_5_sma = float(prev_5_sma_str) if prev_5_sma_str and str(prev_5_sma_str).strip() else 0.0
-                is_trade = 1 if prev_signal > prev_5_sma else -1
+                is_trade = 1 if prev_signal >= prev_5_sma else -1
             row['is_trade'] = is_trade
         
         # Calculate equity_curve_trading_value for each row
@@ -1105,12 +1105,16 @@ class TradingGUI:
                 commission_str = commission_str.strip()
             commission = float(commission_str) if commission_str else 0.0
             
-            if i == 0:
-                equity_curve_trading_value = 0.0  # First row starts at 0
+            # Skip equity curve calculation for trades without 5_sma values (first 4 trades)
+            sma_5_str = row.get('5_sma', '')
+            if not sma_5_str or not str(sma_5_str).strip():
+                equity_curve_trading_value = equity_curve_value  # No change, skip this trade
             else:
                 if is_trade == 1:
+                    # Follow trade: add profit_loss
                     equity_curve_trading_value = equity_curve_value + profit_loss
                 else:  # is_trade == -1
+                    # Reverse trade: subtract profit_loss and 2*commission
                     equity_curve_trading_value = equity_curve_value - profit_loss - (2 * commission)
             equity_curve_value = equity_curve_trading_value
             row['equity_curve_trading_value'] = round(equity_curve_trading_value, 2)
@@ -1235,6 +1239,7 @@ class TradingGUI:
         # Read all rows from CSV
         rows = []
         updated = False
+        updated_row = None
         
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
@@ -1270,6 +1275,7 @@ class TradingGUI:
                     profit_loss = gross_profit - commission
                     row['profit_loss'] = round(profit_loss, 2)
                     updated = True
+                    updated_row = row  # Track the row that was updated
                 
                 rows.append(row)
         
@@ -1285,18 +1291,17 @@ class TradingGUI:
             writer.writeheader()
             writer.writerows(rows)
         
-        # Append updated rows to backup file (only raw trade fields, no equity curve strategy fields)
-        backup_headers = [
-            "date", "create_time", "trade_number", "ticker", "open_price",
-            "take_profit", "stoploss", "quantity", "result", "side",
-            "multiplier", "bet", "commission", "profit_loss", "demo_value", "remark"
-        ]
-        for row in rows:
-            if row.get('result', '').strip():  # Only save completed trades to backup
-                backup_row = {k: row.get(k, '') for k in backup_headers}
-                with open(self.trade_backup_file, 'a', newline='') as f:
-                    writer = csv.DictWriter(f, fieldnames=backup_headers)
-                    writer.writerow(backup_row)
+        # Append only the newly completed trade to backup file (only raw trade fields, no equity curve strategy fields)
+        if updated and updated_row:
+            backup_headers = [
+                "date", "create_time", "trade_number", "ticker", "open_price",
+                "take_profit", "stoploss", "quantity", "result", "side",
+                "multiplier", "bet", "commission", "profit_loss", "demo_value", "remark"
+            ]
+            backup_row = {k: updated_row.get(k, '') for k in backup_headers}
+            with open(self.trade_backup_file, 'a', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=backup_headers)
+                writer.writerow(backup_row)
         
         # Refresh the table
         self._load_open_positions()
@@ -1362,6 +1367,7 @@ class TradingGUI:
         # Read all rows from CSV
         rows = []
         updated_count = 0
+        updated_rows = []
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
             for row in reader:
@@ -1396,6 +1402,7 @@ class TradingGUI:
                         row['profit_loss'] = round(profit_loss, 2)
                         
                         updated_count += 1
+                        updated_rows.append(row)  # Track the rows that were updated
                         break  # Only update once per row
                 rows.append(row)
         
@@ -1412,18 +1419,17 @@ class TradingGUI:
             writer.writeheader()
             writer.writerows(rows)
         
-        # Append updated rows to backup file (only raw trade fields, no equity curve strategy fields)
+        # Append only the newly completed trades to backup file (only raw trade fields, no equity curve strategy fields)
         backup_headers = [
             "date", "create_time", "trade_number", "ticker", "open_price",
             "take_profit", "stoploss", "quantity", "result", "side",
             "multiplier", "bet", "commission", "profit_loss", "demo_value", "remark"
         ]
-        for row in rows:
-            if row.get('result', '').strip():  # Only save completed trades to backup
-                backup_row = {k: row.get(k, '') for k in backup_headers}
-                with open(self.trade_backup_file, 'a', newline='') as f:
-                    writer = csv.DictWriter(f, fieldnames=backup_headers)
-                    writer.writerow(backup_row)
+        for updated_row in updated_rows:
+            backup_row = {k: updated_row.get(k, '') for k in backup_headers}
+            with open(self.trade_backup_file, 'a', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=backup_headers)
+                writer.writerow(backup_row)
         
         # Refresh the table
         self._load_open_positions()
