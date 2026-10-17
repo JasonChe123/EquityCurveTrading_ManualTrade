@@ -796,8 +796,10 @@ class TradingGUI:
         
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
+            print(f"Chart: CSV fieldnames: {reader.fieldnames}")
             trade_count = 0
             for row in reader:
+                print(f"Chart: Processing row {trade_count}: {row}")
                 date_str = row.get('date', '')
                 demo_value_str = row.get('demo_value', '0')
                 sma_5_str = row.get('5_sma', '0')
@@ -807,6 +809,7 @@ class TradingGUI:
                 
                 # Skip rows without date
                 if not date_str or not str(date_str).strip():
+                    print(f"Chart: Skipping row {trade_count} - no date")
                     continue
                 
                 trade_count += 1
