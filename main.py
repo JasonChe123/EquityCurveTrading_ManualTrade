@@ -1122,12 +1122,18 @@ class TradingGUI:
         
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
-            fieldnames = reader.fieldnames
+            fieldnames = list(reader.fieldnames) if reader.fieldnames else []
             for row in reader:
                 rows.append(row)
         
         # Always recalculate all derived fields (including drawdown) to ensure correct values
         rows = self._recalculate_derived_fields(rows)
+        
+        # Update fieldnames to include any new columns added by recalculation
+        new_fieldnames = set(fieldnames)
+        for row in rows:
+            new_fieldnames.update(row.keys())
+        fieldnames = list(new_fieldnames)
         
         # Write updated rows back to CSV
         with open(self.trade_record_file, 'w', newline='') as f:
