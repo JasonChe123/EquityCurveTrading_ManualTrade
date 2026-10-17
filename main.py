@@ -780,7 +780,10 @@ class TradingGUI:
     def _update_chart(self) -> None:
         """Update the chart with latest data from CSV."""
         if not os.path.exists(self.trade_record_file):
+            print(f"Chart: Trade record file does not exist: {self.trade_record_file}")
             return
+        
+        print(f"Chart: Loading data from {self.trade_record_file}")
         
         # Load data from CSV - only include rows with valid calculated fields
         trade_numbers = []
@@ -821,6 +824,9 @@ class TradingGUI:
                 drawdown_values.append(drawdown)
                 signal_values.append(signal)
         
+        print(f"Chart: Loaded {len(trade_numbers)} trades")
+        print(f"Chart: demo_values={len(demo_values)}, sma_5_values={len(sma_5_values)}, equity_curve_values={len(equity_curve_values)}, signal_values={len(signal_values)}")
+        
         # Clear and replot
         self.chart_ax.clear()
         self.chart_ax.set_title("Equity Curve")
@@ -836,24 +842,31 @@ class TradingGUI:
         
         if demo_values:
             self.chart_ax.plot(trade_numbers, demo_values, label='Demo Value (Win/Loss Counter)', color='blue', linewidth=1)
+            print(f"Chart: Plotted demo values")
         
         if equity_curve_values:
             self.chart_ax.plot(trade_numbers, equity_curve_values, label='Equity Curve Trading Value', color='green', linewidth=1)
+            print(f"Chart: Plotted equity curve values")
         
         if drawdown_values:
             # Plot drawdown as grey area chart
             self.chart_ax.fill_between(trade_numbers, drawdown_values, 0, color='grey', alpha=0.3, label='Drawdown')
+            print(f"Chart: Plotted drawdown values")
         
         self.chart_ax.legend()
         
         # Plot signal and 5_sma on separate subplot
         if sma_5_values:
             self.chart_signal_ax.plot(trade_numbers, sma_5_values, label='5 SMA', color='orange', linewidth=1, linestyle='-')
+            print(f"Chart: Plotted 5 SMA values")
         
         if signal_values:
             self.chart_signal_ax.plot(trade_numbers, signal_values, label='Signal', color='purple', linewidth=1)
+            print(f"Chart: Plotted signal values")
         
         self.chart_signal_ax.legend()
+        
+        print(f"Chart: Drawing canvas")
         
         # Add secondary x-axis with dates
         if dates and trade_numbers:
