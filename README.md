@@ -6,7 +6,7 @@ A manual trading application for futures trading with Interactive Brokers (IB) a
 
 - **Dual Platform Support**: Execute trades on both Interactive Brokers and MetaTrader 5 simultaneously
 - **Bracket Orders**: Automatic take profit and stop loss order placement
-- **Equity Curve Tracking**: Real-time equity curve visualization with 38-period SMA
+- **Equity Curve Tracking**: Real-time equity curve visualization with 5-period SMA
 - **Demo Mode**: Test trading strategies without real money
 - **Reverse Order Logic**: Automatically reverse MT5 orders based on equity curve position
 - **Browser Automation**: Send keyboard shortcuts to Tradovate.com after MT5 orders
@@ -162,9 +162,9 @@ Trades are recorded in CSV files in the `trade_record/` directory with the follo
 - bet
 - commission
 - profit_loss
-- demo_value (cumulative P/L)
-- 38_sma (38-period simple moving average)
-- signal (1 if demo_value > 38_sma, else 0)
+- demo_value (win/loss counter: +1 for TP, -1 for SL)
+- 5_sma (5-period simple moving average)
+- signal (1 if demo_value >= 5_sma, else 0)
 - is_trade (1 if previous signal was 1, else -1)
 - equity_curve_trading_value
 - drawdown

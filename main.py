@@ -777,7 +777,7 @@ class TradingGUI:
         trade_numbers = []
         dates = []
         demo_values = []
-        sma_38_values = []
+        sma_5_values = []
         equity_curve_values = []
         drawdown_values = []
         
@@ -787,28 +787,28 @@ class TradingGUI:
             for row in reader:
                 date_str = row.get('date', '')
                 demo_value_str = row.get('demo_value', '0')
-                sma_38_str = row.get('38_sma', '0')
+                sma_5_str = row.get('5_sma', '0')
                 equity_curve_str = row.get('equity_curve_trading_value', '0')
                 drawdown_str = row.get('drawdown', '0')
                 
                 # Skip rows where calculated fields are empty (newly opened trades)
                 if not date_str or not str(date_str).strip():
                     continue
-                if not sma_38_str or not str(sma_38_str).strip():
+                if not sma_5_str or not str(sma_5_str).strip():
                     continue
                 if not equity_curve_str or not str(equity_curve_str).strip():
                     continue
                 
                 trade_count += 1
                 demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
-                sma_38 = float(sma_38_str) if sma_38_str and str(sma_38_str).strip() else 0.0
+                sma_5 = float(sma_5_str) if sma_5_str and str(sma_5_str).strip() else 0.0
                 equity_curve = float(equity_curve_str) if equity_curve_str and str(equity_curve_str).strip() else 0.0
                 drawdown = float(drawdown_str) if drawdown_str and str(drawdown_str).strip() else 0.0
                 
                 trade_numbers.append(trade_count)
                 dates.append(date_str)
                 demo_values.append(demo_value)
-                sma_38_values.append(sma_38)
+                sma_5_values.append(sma_5)
                 equity_curve_values.append(equity_curve)
                 drawdown_values.append(drawdown)
         
@@ -820,10 +820,10 @@ class TradingGUI:
         self.chart_ax.grid(True)
         
         if demo_values:
-            self.chart_ax.plot(trade_numbers, demo_values, label='Demo Value (Cumulative P/L)', color='blue', linewidth=1)
+            self.chart_ax.plot(trade_numbers, demo_values, label='Demo Value (Win/Loss Counter)', color='blue', linewidth=1)
         
-        if sma_38_values:
-            self.chart_ax.plot(trade_numbers, sma_38_values, label='38 SMA', color='orange', linewidth=1, linestyle='-')
+        if sma_5_values:
+            self.chart_ax.plot(trade_numbers, sma_5_values, label='5 SMA', color='orange', linewidth=1, linestyle='-')
         
         if equity_curve_values:
             self.chart_ax.plot(trade_numbers, equity_curve_values, label='Equity Curve Trading Value', color='green', linewidth=1)
@@ -854,11 +854,11 @@ class TradingGUI:
             self.chart_canvas.draw()
 
     def _update_reverse_order_checkbox(self) -> None:
-        """Update Reverse Order checkbox based on demo value vs 38 SMA."""
-        latest_demo_value, latest_sma_38 = self._get_latest_closed_trade_values()
+        """Update Reverse Order checkbox based on demo value vs 5 SMA."""
+        latest_demo_value, latest_sma_5 = self._get_latest_closed_trade_values()
         
-        # Set checkbox: checked if demo value < 38 SMA, unchecked if >=
-        if latest_demo_value < latest_sma_38:
+        # Set checkbox: checked if demo value < 5 SMA, unchecked if >=
+        if latest_demo_value < latest_sma_5:
             self.reverse_order_var.set(True)
         else:
             self.reverse_order_var.set(False)
@@ -880,7 +880,7 @@ class TradingGUI:
             "commission",
             "profit_loss",
             "demo_value",
-            "38_sma",
+            "5_sma",
             "signal",
             "is_trade",
             "equity_curve_trading_value",
@@ -961,8 +961,8 @@ class TradingGUI:
             round(bet, 2),  # bet
             round(commission, 2),  # commission
             "",  # profit_loss
-            round(cumulative_demo_value, 2),  # demo_value (cumulative)
-            "",  # 38_sma
+            round(cumulative_demo_value, 2),  # demo_value (win/loss counter)
+            "",  # 5_sma
             "",  # signal
             "",  # is_trade
             "",  # equity_curve_trading_value
@@ -987,60 +987,68 @@ class TradingGUI:
         return count + 1
 
     def _get_cumulative_demo_value(self) -> float:
-        """Calculate cumulative profit_loss from all completed trades."""
+        """Calculate win/loss counter from all completed trades (+1 for win, -1 for loss)."""
         if not os.path.exists(self.trade_record_file):
             return 0.0
         
-        cumulative = 0.0
+        win_loss_count = 0.0
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
             for row in reader:
                 profit_loss = row.get('profit_loss', '').strip()
-                if profit_loss:
+                result = row.get('result', '').strip()
+                if profit_loss and result:
                     try:
-                        cumulative += float(profit_loss)
+                        # +1 for winner (TP), -1 for loser (SL)
+                        if result == 'TP':
+                            win_loss_count += 1
+                        elif result == 'SL':
+                            win_loss_count -= 1
                     except ValueError:
                         pass
-        return cumulative
+        return win_loss_count
 
-    def _calculate_38_sma(self, demo_values: list[float]) -> float:
-        """Calculate 38-period simple moving average of demo_values."""
-        if len(demo_values) < 38:
+    def _calculate_5_sma(self, demo_values: list[float]) -> float:
+        """Calculate 5-period simple moving average of demo_values."""
+        if len(demo_values) < 5:
             return 0.0
-        return sum(demo_values[-38:]) / 38
+        return sum(demo_values[-5:]) / 5
 
     def _recalculate_derived_fields(self, rows: list[dict]) -> list[dict]:
-        """Recalculate all derived fields (demo_value, 38_sma, signal, is_trade, equity_curve_trading_value) for all rows."""
-        # Recalculate demo_value and 38_sma for all rows
-        cumulative = 0.0
+        """Recalculate all derived fields (demo_value, 5_sma, signal, is_trade, equity_curve_trading_value) for all rows."""
+        # Recalculate demo_value and 5_sma for all rows
+        win_loss_count = 0.0
         demo_values = []
         for row in rows:
-            profit_loss = row.get('profit_loss', 0)
-            if isinstance(profit_loss, str):
-                profit_loss = profit_loss.strip()
-            if profit_loss:
-                try:
-                    cumulative += float(profit_loss)
-                except (ValueError, TypeError):
-                    pass
-            row['demo_value'] = round(cumulative, 2)
-            demo_values.append(cumulative)
+            result = row.get('result', '')
+            if isinstance(result, str):
+                result = result.strip()
+            if result:
+                # +1 for winner (TP), -1 for loser (SL)
+                if result == 'TP':
+                    win_loss_count += 1
+                elif result == 'SL':
+                    win_loss_count -= 1
+            row['demo_value'] = round(win_loss_count, 2)
+            demo_values.append(win_loss_count)
         
-        # Calculate 38_sma for each row
+        # Calculate 5_sma for each row
         for i, row in enumerate(rows):
-            if i >= 37:  # Need at least 38 data points (0-indexed)
-                row['38_sma'] = round(self._calculate_38_sma(demo_values[:i+1]), 2)
+            if i >= 4:  # Need at least 5 data points (0-indexed)
+                row['5_sma'] = round(self._calculate_5_sma(demo_values[:i+1]), 2)
+            else:
+                row['5_sma'] = ''
         
         # Calculate signal and is_trade for each row
         signals = []
         for i, row in enumerate(rows):
             demo_value_str = row.get('demo_value', 0)
             demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
-            sma_38_str = row.get('38_sma', 0)
-            sma_38 = float(sma_38_str) if sma_38_str and str(sma_38_str).strip() else 0.0
+            sma_5_str = row.get('5_sma', 0)
+            sma_5 = float(sma_5_str) if sma_5_str and str(sma_5_str).strip() else 0.0
             
-            # signal: 1 if demo_value > 38_sma, else 0
-            signal = 1 if demo_value > sma_38 else 0
+            # signal: 1 if demo_value >= 5_sma, else 0
+            signal = 1 if demo_value >= sma_5 else 0
             row['signal'] = signal
             signals.append(signal)
             
@@ -1086,7 +1094,7 @@ class TradingGUI:
         return rows
 
     def _get_latest_closed_trade_values(self) -> tuple[float, float]:
-        """Get the latest demo_value and 38_sma from the most recent closed trade."""
+        """Get the latest demo_value and 5_sma from the most recent closed trade."""
         if not os.path.exists(self.trade_record_file):
             return 0.0, 0.0
         
@@ -1094,13 +1102,13 @@ class TradingGUI:
             reader = csv.DictReader(f)
             rows = list(reader)
             if rows:
-                # Find the most recent row with valid 38_sma (closed trade)
+                # Find the most recent row with valid 5_sma (closed trade)
                 for row in reversed(rows):
-                    sma_38_str = row.get('38_sma', '0')
-                    if sma_38_str and str(sma_38_str).strip():
+                    sma_5_str = row.get('5_sma', '0')
+                    if sma_5_str and str(sma_5_str).strip():
                         latest_demo_value = float(row.get('demo_value', '0')) if row.get('demo_value', '').strip() else 0.0
-                        latest_sma_38 = float(sma_38_str)
-                        return latest_demo_value, latest_sma_38
+                        latest_sma_5 = float(sma_5_str)
+                        return latest_demo_value, latest_sma_5
         
         return 0.0, 0.0
 
@@ -1137,8 +1145,8 @@ class TradingGUI:
         if not os.path.exists(self.trade_record_file):
             return
         
-        # Get the latest demo_value and 38_sma from the most recent closed trade
-        latest_demo_value, latest_sma_38 = self._get_latest_closed_trade_values()
+        # Get the latest demo_value and 5_sma from the most recent closed trade
+        latest_demo_value, latest_sma_5 = self._get_latest_closed_trade_values()
         
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
@@ -1147,7 +1155,7 @@ class TradingGUI:
                 if not row.get('result', '').strip():
                     self.open_positions.append(row)
                     # Calculate diff to SMA using latest values
-                    diff_to_sma = latest_demo_value - latest_sma_38
+                    diff_to_sma = latest_demo_value - latest_sma_5
                     
                     self.positions_tree.insert("", "end", values=(
                         row.get('date', ''),
