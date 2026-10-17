@@ -664,7 +664,7 @@ class TradingGUI:
         table_frame = ttk.Frame(main)
         table_frame.grid(row=9, column=0, columnspan=6, sticky="nsew")
         
-        columns = ("date", "time", "ticker", "side", "open_price", "tp", "sl", "qty", "demo", "result")
+        columns = ("date", "time", "ticker", "side", "open_price", "tp", "sl", "qty", "demo")
         self.positions_tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=6, selectmode="extended")
         
         self.positions_tree.heading("date", text="Date")
@@ -676,7 +676,6 @@ class TradingGUI:
         self.positions_tree.heading("sl", text="SL")
         self.positions_tree.heading("qty", text="Qty")
         self.positions_tree.heading("demo", text="Bet")
-        self.positions_tree.heading("result", text="Diff to SMA")
         
         self.positions_tree.column("date", width=80)
         self.positions_tree.column("time", width=70)
@@ -687,7 +686,6 @@ class TradingGUI:
         self.positions_tree.column("sl", width=70)
         self.positions_tree.column("qty", width=50)
         self.positions_tree.column("demo", width=70)
-        self.positions_tree.column("result", width=120)
         
         scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.positions_tree.yview)
         self.positions_tree.configure(yscrollcommand=scrollbar.set)
@@ -741,23 +739,22 @@ class TradingGUI:
             self.trade_record_dir,
             f"trades_{datetime.now().strftime('%Y')}.csv"
         )
+        self.trade_backup_file = os.path.join(
+            self.trade_record_dir,
+            "trades_backup.csv"
+        )
         self._ensure_trade_record_headers()
+        self._ensure_backup_headers()
 
     def _init_chart(self) -> None:
         """Initialize the matplotlib figure for equity chart."""
-        self.chart_figure = Figure(figsize=(10, 8), dpi=100)
-        # Create two subplots: top for demo value and equity curve, bottom for signal
-        self.chart_ax = self.chart_figure.add_subplot(211)
+        self.chart_figure = Figure(figsize=(10, 6), dpi=100)
+        # Create single subplot for demo value and equity curve
+        self.chart_ax = self.chart_figure.add_subplot(111)
         self.chart_ax.set_title("Equity Curve")
         self.chart_ax.set_xlabel("Trade Number")
         self.chart_ax.set_ylabel("Value")
         self.chart_ax.grid(True)
-        
-        self.chart_signal_ax = self.chart_figure.add_subplot(212)
-        self.chart_signal_ax.set_title("Signal Value with 5 SMA")
-        self.chart_signal_ax.set_xlabel("Trade Number")
-        self.chart_signal_ax.set_ylabel("Signal")
-        self.chart_signal_ax.grid(True)
         
         self.chart_figure.tight_layout()
         self.chart_window = None
@@ -796,10 +793,8 @@ class TradingGUI:
         
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
-            print(f"Chart: CSV fieldnames: {reader.fieldnames}")
             trade_count = 0
             for row in reader:
-                print(f"Chart: Processing row {trade_count}: {row}")
                 date_str = row.get('date', '')
                 demo_value_str = row.get('demo_value', '0')
                 sma_5_str = row.get('5_sma', '0')
@@ -809,7 +804,6 @@ class TradingGUI:
                 
                 # Skip rows without date
                 if not date_str or not str(date_str).strip():
-                    print(f"Chart: Skipping row {trade_count} - no date")
                     continue
                 
                 trade_count += 1
@@ -827,8 +821,6 @@ class TradingGUI:
                 drawdown_values.append(drawdown)
                 signal_values.append(signal)
         
-        print(f"Chart: Loaded {len(trade_numbers)} trades")
-        print(f"Chart: demo_values={len(demo_values)}, sma_5_values={len(sma_5_values)}, equity_curve_values={len(equity_curve_values)}, signal_values={len(signal_values)}")
         
         # Clear and replot
         self.chart_ax.clear()
@@ -837,39 +829,18 @@ class TradingGUI:
         self.chart_ax.set_ylabel("Value")
         self.chart_ax.grid(True)
         
-        self.chart_signal_ax.clear()
-        self.chart_signal_ax.set_title("Signal Value with 5 SMA")
-        self.chart_signal_ax.set_xlabel("Trade Number")
-        self.chart_signal_ax.set_ylabel("Signal")
-        self.chart_signal_ax.grid(True)
-        
         if demo_values:
-            self.chart_ax.plot(trade_numbers, demo_values, label='Demo Value (Win/Loss Counter)', color='blue', linewidth=1)
-            print(f"Chart: Plotted demo values")
+            self.chart_ax.plot(trade_numbers, demo_values, label='Demo Value (Profit/Loss)', color='blue', linewidth=1)
         
         if equity_curve_values:
             self.chart_ax.plot(trade_numbers, equity_curve_values, label='Equity Curve Trading Value', color='green', linewidth=1)
-            print(f"Chart: Plotted equity curve values")
         
         if drawdown_values:
             # Plot drawdown as grey area chart
             self.chart_ax.fill_between(trade_numbers, drawdown_values, 0, color='grey', alpha=0.3, label='Drawdown')
-            print(f"Chart: Plotted drawdown values")
         
         self.chart_ax.legend()
         
-        # Plot signal and 5_sma on separate subplot
-        if sma_5_values:
-            self.chart_signal_ax.plot(trade_numbers, sma_5_values, label='5 SMA', color='orange', linewidth=1, linestyle='-')
-            print(f"Chart: Plotted 5 SMA values")
-        
-        if signal_values:
-            self.chart_signal_ax.plot(trade_numbers, signal_values, label='Signal', color='purple', linewidth=1)
-            print(f"Chart: Plotted signal values")
-        
-        self.chart_signal_ax.legend()
-        
-        print(f"Chart: Drawing canvas")
         
         # Add secondary x-axis with dates
         if dates and trade_numbers:
@@ -901,7 +872,7 @@ class TradingGUI:
             self.reverse_order_var.set(False)
 
     def _ensure_trade_record_headers(self) -> None:
-        headers = [
+        self.trade_record_fieldnames = [
             "date",
             "create_time",
             "trade_number",
@@ -926,6 +897,30 @@ class TradingGUI:
         ]
         if not os.path.exists(self.trade_record_file):
             with open(self.trade_record_file, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(self.trade_record_fieldnames)
+    
+    def _ensure_backup_headers(self) -> None:
+        headers = [
+            "date",
+            "create_time",
+            "trade_number",
+            "ticker",
+            "open_price",
+            "take_profit",
+            "stoploss",
+            "quantity",
+            "result",
+            "side",
+            "multiplier",
+            "bet",
+            "commission",
+            "profit_loss",
+            "demo_value",
+            "remark"
+        ]
+        if not os.path.exists(self.trade_backup_file):
+            with open(self.trade_backup_file, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(headers)
 
@@ -1053,47 +1048,48 @@ class TradingGUI:
 
     def _recalculate_derived_fields(self, rows: list[dict]) -> list[dict]:
         """Recalculate all derived fields (demo_value, 5_sma, signal, is_trade, equity_curve_trading_value) for all rows."""
-        # Recalculate demo_value and 5_sma for all rows
-        win_loss_count = 0.0
-        demo_values = []
-        for row in rows:
+        # Calculate demo_value (cumulative profit_loss), signal (win/loss counter), and 5_sma
+        win_loss_count = 0.0  # This is the Signal (win/loss counter)
+        cumulative_profit_loss = 0.0  # This is the Demo Value (cumulative profit/loss)
+        signals = []
+        
+        for i, row in enumerate(rows):
+            # Demo Value = cumulative profit/loss
+            profit_loss_str = row.get('profit_loss', 0)
+            if isinstance(profit_loss_str, str):
+                profit_loss_str = profit_loss_str.strip()
+            profit_loss = float(profit_loss_str) if profit_loss_str else 0.0
+            cumulative_profit_loss += profit_loss
+            row['demo_value'] = round(cumulative_profit_loss, 2)
+            
+            # Signal = win/loss counter (+1 for TP, -1 for SL)
             result = row.get('result', '')
             if isinstance(result, str):
                 result = result.strip()
             if result:
-                # +1 for winner (TP), -1 for loser (SL)
                 if result == 'TP':
                     win_loss_count += 1
                 elif result == 'SL':
                     win_loss_count -= 1
-            row['demo_value'] = round(win_loss_count, 2)
-            demo_values.append(win_loss_count)
-        
-        # Calculate 5_sma for each row
-        for i, row in enumerate(rows):
+            row['signal'] = round(win_loss_count, 2)
+            signals.append(win_loss_count)
+            
+            # 5 SMA = 5-period simple moving average of Signal
             if i >= 4:  # Need at least 5 data points (0-indexed)
-                row['5_sma'] = round(self._calculate_5_sma(demo_values[:i+1]), 2)
+                row['5_sma'] = round(self._calculate_5_sma(signals[:i+1]), 2)
             else:
                 row['5_sma'] = ''
         
-        # Calculate signal and is_trade for each row
-        signals = []
+        # Calculate is_trade for each row
         for i, row in enumerate(rows):
-            demo_value_str = row.get('demo_value', 0)
-            demo_value = float(demo_value_str) if demo_value_str and str(demo_value_str).strip() else 0.0
-            sma_5_str = row.get('5_sma', 0)
-            sma_5 = float(sma_5_str) if sma_5_str and str(sma_5_str).strip() else 0.0
-            
-            # signal: 1 if demo_value >= 5_sma, else 0
-            signal = 1 if demo_value >= sma_5 else 0
-            row['signal'] = signal
-            signals.append(signal)
-            
-            # is_trade: 1 if previous signal is 1, else -1
+            # is_trade: 1 if previous signal > previous 5_sma, else -1
             if i == 0:
                 is_trade = -1  # No previous signal for first row
             else:
-                is_trade = 1 if signals[i-1] == 1 else -1
+                prev_signal = signals[i-1]
+                prev_5_sma_str = rows[i-1].get('5_sma', 0)
+                prev_5_sma = float(prev_5_sma_str) if prev_5_sma_str and str(prev_5_sma_str).strip() else 0.0
+                is_trade = 1 if prev_signal > prev_5_sma else -1
             row['is_trade'] = is_trade
         
         # Calculate equity_curve_trading_value for each row
@@ -1159,22 +1155,15 @@ class TradingGUI:
         
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
-            fieldnames = list(reader.fieldnames) if reader.fieldnames else []
             for row in reader:
                 rows.append(row)
         
         # Always recalculate all derived fields (including drawdown) to ensure correct values
         rows = self._recalculate_derived_fields(rows)
         
-        # Update fieldnames to include any new columns added by recalculation
-        new_fieldnames = set(fieldnames)
-        for row in rows:
-            new_fieldnames.update(row.keys())
-        fieldnames = list(new_fieldnames)
-        
         # Write updated rows back to CSV
         with open(self.trade_record_file, 'w', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=self.trade_record_fieldnames)
             writer.writeheader()
             writer.writerows(rows)
         
@@ -1197,8 +1186,6 @@ class TradingGUI:
                 # Only show trades with empty result (open positions)
                 if not row.get('result', '').strip():
                     self.open_positions.append(row)
-                    # Calculate diff to SMA using latest values
-                    diff_to_sma = latest_demo_value - latest_sma_5
                     
                     self.positions_tree.insert("", "end", values=(
                         row.get('date', ''),
@@ -1209,8 +1196,7 @@ class TradingGUI:
                         row.get('take_profit', ''),
                         row.get('stoploss', ''),
                         row.get('quantity', ''),
-                        row.get('bet', ''),
-                        round(diff_to_sma, 2)
+                        row.get('bet', '')
                     ))
 
     def _check_tp_sl_hits(self, current_price: float) -> list[dict]:
@@ -1252,7 +1238,6 @@ class TradingGUI:
         
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
-            fieldnames = reader.fieldnames
             for row in reader:
                 # Check if this row matches the position
                 if (row.get('date') == position.get('date') and 
@@ -1296,9 +1281,22 @@ class TradingGUI:
         
         # Write updated rows back to CSV
         with open(self.trade_record_file, 'w', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=self.trade_record_fieldnames)
             writer.writeheader()
             writer.writerows(rows)
+        
+        # Append updated rows to backup file (only raw trade fields, no equity curve strategy fields)
+        backup_headers = [
+            "date", "create_time", "trade_number", "ticker", "open_price",
+            "take_profit", "stoploss", "quantity", "result", "side",
+            "multiplier", "bet", "commission", "profit_loss", "demo_value", "remark"
+        ]
+        for row in rows:
+            if row.get('result', '').strip():  # Only save completed trades to backup
+                backup_row = {k: row.get(k, '') for k in backup_headers}
+                with open(self.trade_backup_file, 'a', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=backup_headers)
+                    writer.writerow(backup_row)
         
         # Refresh the table
         self._load_open_positions()
@@ -1366,7 +1364,6 @@ class TradingGUI:
         updated_count = 0
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
-            fieldnames = reader.fieldnames
             for row in reader:
                 # Check if this row matches any selected trade
                 for selected in selected_trades:
@@ -1411,9 +1408,22 @@ class TradingGUI:
         
         # Write updated rows back to CSV
         with open(self.trade_record_file, 'w', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=self.trade_record_fieldnames)
             writer.writeheader()
             writer.writerows(rows)
+        
+        # Append updated rows to backup file (only raw trade fields, no equity curve strategy fields)
+        backup_headers = [
+            "date", "create_time", "trade_number", "ticker", "open_price",
+            "take_profit", "stoploss", "quantity", "result", "side",
+            "multiplier", "bet", "commission", "profit_loss", "demo_value", "remark"
+        ]
+        for row in rows:
+            if row.get('result', '').strip():  # Only save completed trades to backup
+                backup_row = {k: row.get(k, '') for k in backup_headers}
+                with open(self.trade_backup_file, 'a', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=backup_headers)
+                    writer.writerow(backup_row)
         
         # Refresh the table
         self._load_open_positions()
@@ -1454,7 +1464,6 @@ class TradingGUI:
         deleted_count = 0
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
-            fieldnames = reader.fieldnames
             for row in reader:
                 # Check if this row matches any selected trade
                 should_delete = False
@@ -1478,7 +1487,7 @@ class TradingGUI:
         
         # Write updated rows back to CSV
         with open(self.trade_record_file, 'w', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=self.trade_record_fieldnames)
             writer.writeheader()
             writer.writerows(rows)
         
@@ -1977,7 +1986,6 @@ class TradingGUI:
         
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
-            fieldnames = reader.fieldnames
             for row in reader:
                 # Update all rows with empty result (open positions)
                 if not row.get('result', '').strip():
@@ -1994,7 +2002,7 @@ class TradingGUI:
         
         # Write updated rows back to CSV
         with open(self.trade_record_file, 'w', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=self.trade_record_fieldnames)
             writer.writeheader()
             writer.writerows(rows)
         
