@@ -745,12 +745,21 @@ class TradingGUI:
 
     def _init_chart(self) -> None:
         """Initialize the matplotlib figure for equity chart."""
-        self.chart_figure = Figure(figsize=(10, 6), dpi=100)
-        self.chart_ax = self.chart_figure.add_subplot(111)
+        self.chart_figure = Figure(figsize=(10, 8), dpi=100)
+        # Create two subplots: top for demo value and equity curve, bottom for signal
+        self.chart_ax = self.chart_figure.add_subplot(211)
         self.chart_ax.set_title("Equity Curve")
-        self.chart_ax.set_xlabel("Date")
+        self.chart_ax.set_xlabel("Trade Number")
         self.chart_ax.set_ylabel("Value")
         self.chart_ax.grid(True)
+        
+        self.chart_signal_ax = self.chart_figure.add_subplot(212)
+        self.chart_signal_ax.set_title("Signal Value with 5 SMA")
+        self.chart_signal_ax.set_xlabel("Trade Number")
+        self.chart_signal_ax.set_ylabel("Signal")
+        self.chart_signal_ax.grid(True)
+        
+        self.chart_figure.tight_layout()
         self.chart_window = None
         self.chart_canvas = None
         self.chart_sec_ax = None
@@ -780,6 +789,7 @@ class TradingGUI:
         sma_5_values = []
         equity_curve_values = []
         drawdown_values = []
+        signal_values = []
         
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
@@ -790,13 +800,10 @@ class TradingGUI:
                 sma_5_str = row.get('5_sma', '0')
                 equity_curve_str = row.get('equity_curve_trading_value', '0')
                 drawdown_str = row.get('drawdown', '0')
+                signal_str = row.get('signal', '0')
                 
-                # Skip rows where calculated fields are empty (newly opened trades)
+                # Skip rows without date
                 if not date_str or not str(date_str).strip():
-                    continue
-                if not sma_5_str or not str(sma_5_str).strip():
-                    continue
-                if not equity_curve_str or not str(equity_curve_str).strip():
                     continue
                 
                 trade_count += 1
@@ -804,6 +811,7 @@ class TradingGUI:
                 sma_5 = float(sma_5_str) if sma_5_str and str(sma_5_str).strip() else 0.0
                 equity_curve = float(equity_curve_str) if equity_curve_str and str(equity_curve_str).strip() else 0.0
                 drawdown = float(drawdown_str) if drawdown_str and str(drawdown_str).strip() else 0.0
+                signal = float(signal_str) if signal_str and str(signal_str).strip() else 0.0
                 
                 trade_numbers.append(trade_count)
                 dates.append(date_str)
@@ -811,6 +819,7 @@ class TradingGUI:
                 sma_5_values.append(sma_5)
                 equity_curve_values.append(equity_curve)
                 drawdown_values.append(drawdown)
+                signal_values.append(signal)
         
         # Clear and replot
         self.chart_ax.clear()
@@ -819,11 +828,14 @@ class TradingGUI:
         self.chart_ax.set_ylabel("Value")
         self.chart_ax.grid(True)
         
+        self.chart_signal_ax.clear()
+        self.chart_signal_ax.set_title("Signal Value with 5 SMA")
+        self.chart_signal_ax.set_xlabel("Trade Number")
+        self.chart_signal_ax.set_ylabel("Signal")
+        self.chart_signal_ax.grid(True)
+        
         if demo_values:
             self.chart_ax.plot(trade_numbers, demo_values, label='Demo Value (Win/Loss Counter)', color='blue', linewidth=1)
-        
-        if sma_5_values:
-            self.chart_ax.plot(trade_numbers, sma_5_values, label='5 SMA', color='orange', linewidth=1, linestyle='-')
         
         if equity_curve_values:
             self.chart_ax.plot(trade_numbers, equity_curve_values, label='Equity Curve Trading Value', color='green', linewidth=1)
@@ -833,6 +845,15 @@ class TradingGUI:
             self.chart_ax.fill_between(trade_numbers, drawdown_values, 0, color='grey', alpha=0.3, label='Drawdown')
         
         self.chart_ax.legend()
+        
+        # Plot signal and 5_sma on separate subplot
+        if sma_5_values:
+            self.chart_signal_ax.plot(trade_numbers, sma_5_values, label='5 SMA', color='orange', linewidth=1, linestyle='-')
+        
+        if signal_values:
+            self.chart_signal_ax.plot(trade_numbers, signal_values, label='Signal', color='purple', linewidth=1)
+        
+        self.chart_signal_ax.legend()
         
         # Add secondary x-axis with dates
         if dates and trade_numbers:
