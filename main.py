@@ -862,11 +862,11 @@ class TradingGUI:
             self.chart_canvas.draw()
 
     def _update_reverse_order_checkbox(self) -> None:
-        """Update Reverse Order checkbox based on demo value vs 5 SMA."""
-        latest_demo_value, latest_sma_5 = self._get_latest_closed_trade_values()
+        """Update Reverse Order checkbox based on signal vs 5 SMA."""
+        latest_signal, latest_sma_5 = self._get_latest_closed_trade_signal_and_sma()
         
-        # Set checkbox: checked if demo value < 5 SMA, unchecked if >=
-        if latest_demo_value < latest_sma_5:
+        # Set checkbox: checked if signal < 5 SMA, unchecked if >=
+        if latest_signal < latest_sma_5:
             self.reverse_order_var.set(True)
         else:
             self.reverse_order_var.set(False)
@@ -1130,8 +1130,8 @@ class TradingGUI:
         
         return rows
 
-    def _get_latest_closed_trade_values(self) -> tuple[float, float]:
-        """Get the latest demo_value and 5_sma from the most recent closed trade."""
+    def _get_latest_closed_trade_signal_and_sma(self) -> tuple[float, float]:
+        """Get the latest signal and 5_sma from the most recent closed trade."""
         if not os.path.exists(self.trade_record_file):
             return 0.0, 0.0
         
@@ -1143,9 +1143,10 @@ class TradingGUI:
                 for row in reversed(rows):
                     sma_5_str = row.get('5_sma', '0')
                     if sma_5_str and str(sma_5_str).strip():
-                        latest_demo_value = float(row.get('demo_value', '0')) if row.get('demo_value', '').strip() else 0.0
+                        signal_str = row.get('signal', '0')
+                        latest_signal = float(signal_str) if signal_str and str(signal_str).strip() else 0.0
                         latest_sma_5 = float(sma_5_str)
-                        return latest_demo_value, latest_sma_5
+                        return latest_signal, latest_sma_5
         
         return 0.0, 0.0
 
@@ -1181,8 +1182,8 @@ class TradingGUI:
         if not os.path.exists(self.trade_record_file):
             return
         
-        # Get the latest demo_value and 5_sma from the most recent closed trade
-        latest_demo_value, latest_sma_5 = self._get_latest_closed_trade_values()
+        # Get the latest signal and 5_sma from the most recent closed trade
+        latest_signal, latest_sma_5 = self._get_latest_closed_trade_signal_and_sma()
         
         with open(self.trade_record_file, 'r', newline='') as f:
             reader = csv.DictReader(f)
@@ -1310,7 +1311,7 @@ class TradingGUI:
         if self.chart_window is not None and tk.Toplevel.winfo_exists(self.chart_window):
             self.root.after(100, self._update_chart)
         
-        # Update reverse order checkbox based on latest demo value vs 38 SMA
+        # Update reverse order checkbox based on latest signal vs 5 SMA
         self._update_reverse_order_checkbox()
         
         print(f"Auto-updated position {position.get('ticker')} to {result}")
@@ -1439,7 +1440,7 @@ class TradingGUI:
         if self.chart_window is not None and tk.Toplevel.winfo_exists(self.chart_window):
             self.root.after(100, self._update_chart)
         
-        # Update reverse order checkbox based on latest demo value vs 38 SMA
+        # Update reverse order checkbox based on latest signal vs 5 SMA
         self._update_reverse_order_checkbox()
         
         messagebox.showinfo("Success", f"Updated {updated_count} trade(s) to {result_value}")
@@ -1504,7 +1505,7 @@ class TradingGUI:
         if self.chart_window is not None and tk.Toplevel.winfo_exists(self.chart_window):
             self.root.after(100, self._update_chart)
         
-        # Update reverse order checkbox based on latest demo value vs 38 SMA
+        # Update reverse order checkbox based on latest signal vs 5 SMA
         self._update_reverse_order_checkbox()
         
         messagebox.showinfo("Success", f"Deleted {deleted_count} trade(s)")
@@ -2019,7 +2020,7 @@ class TradingGUI:
         if self.chart_window is not None and tk.Toplevel.winfo_exists(self.chart_window):
             self.root.after(100, self._update_chart)
         
-        # Update reverse order checkbox based on latest demo value vs 38 SMA
+        # Update reverse order checkbox based on latest signal vs 5 SMA
         self._update_reverse_order_checkbox()
         
         print(f"Updated {updated_count} open position(s) to CLOSED")

@@ -8,7 +8,7 @@ A manual trading application for futures trading with Interactive Brokers (IB) a
 - **Bracket Orders**: Automatic take profit and stop loss order placement
 - **Equity Curve Tracking**: Real-time equity curve visualization with 5-period SMA
 - **Demo Mode**: Test trading strategies without real money
-- **Reverse Order Logic**: Automatically reverse MT5 orders based on equity curve position
+- **Reverse Order Logic**: Automatically reverse order direction when the win/loss signal is below its 5-period SMA
 - **Browser Automation**: Send keyboard shortcuts to Tradovate.com after MT5 orders
 - **Trade Recording**: Comprehensive CSV-based trade record keeping
 - **Real-time ATR**: Average True Range calculation for dynamic position sizing
@@ -104,7 +104,7 @@ You can also configure using environment variables:
 - **ATR Mult**: ATR multiplier for bracket distance calculation
 - **MT5 Symbol**: MT5 symbol mapping (auto-mapped for NQ → NAS100_SB)
 - **MT5 Contract Size**: Contract size for MT5 orders
-- **Reverse Order**: Automatically reverse MT5 orders based on equity curve
+- **Reverse Order**: Automatically checked when the win/loss signal is below its 5-period SMA; unchecked when the signal is at or above it
 
 ### Order Buttons
 
@@ -162,9 +162,9 @@ Trades are recorded in CSV files in the `trade_record/` directory with the follo
 - bet
 - commission
 - profit_loss
-- demo_value (win/loss counter: +1 for TP, -1 for SL)
+- demo_value (cumulative profit/loss)
 - 5_sma (5-period simple moving average)
-- signal (1 if demo_value >= 5_sma, else 0)
+- signal (win/loss counter: +1 for TP, -1 for SL)
 - is_trade (1 if previous signal was 1, else -1)
 - equity_curve_trading_value
 - drawdown
