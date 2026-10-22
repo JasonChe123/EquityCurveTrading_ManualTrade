@@ -598,7 +598,14 @@ class TradingGUI:
         symbol_entry.bind('<Return>', lambda e: self._refresh_symbol_data())
         self._ui_widgets.append(symbol_entry)
         ttk.Label(main, text="IB Qty").grid(row=1, column=3, sticky="w")
-        qty_entry = ttk.Entry(main, textvariable=self.qty_var, width=12)
+        qty_entry = ttk.Spinbox(
+            main,
+            textvariable=self.qty_var,
+            width=12,
+            from_=-1000000000,
+            to=1000000000,
+            increment=1,
+        )
         qty_entry.grid(row=1, column=4, sticky="w")
         self._ui_widgets.append(qty_entry)
 
@@ -610,7 +617,14 @@ class TradingGUI:
         mt5_symbol_entry.grid(row=2, column=2, sticky="w")
         self._ui_widgets.append(mt5_symbol_entry)
         ttk.Label(main, text="MT5 Contract Size").grid(row=2, column=3, sticky="w")
-        mt5_contract_size_entry = ttk.Entry(main, textvariable=self.mt5_contract_size_var, width=12)
+        mt5_contract_size_entry = ttk.Spinbox(
+            main,
+            textvariable=self.mt5_contract_size_var,
+            width=12,
+            from_=-1000000000,
+            to=1000000000,
+            increment=0.1,
+        )
         mt5_contract_size_entry.grid(row=2, column=4, sticky="w")
         self._ui_widgets.append(mt5_contract_size_entry)
 
@@ -752,7 +766,7 @@ class TradingGUI:
         # Create single subplot for demo value and equity curve
         self.chart_ax = self.chart_figure.add_subplot(111)
         self.chart_ax.set_title("Equity Curve")
-        self.chart_ax.set_xlabel("Trade Number")
+        self.chart_ax.set_xlabel("Date")
         self.chart_ax.set_ylabel("Value")
         self.chart_ax.grid(True)
         
@@ -825,7 +839,7 @@ class TradingGUI:
         # Clear and replot
         self.chart_ax.clear()
         self.chart_ax.set_title("Equity Curve")
-        self.chart_ax.set_xlabel("Trade Number")
+        self.chart_ax.set_xlabel("Date")
         self.chart_ax.set_ylabel("Value")
         self.chart_ax.grid(True)
         
@@ -842,18 +856,23 @@ class TradingGUI:
         self.chart_ax.legend()
         
         
-        # Add secondary x-axis with dates
+        # Show dates below the chart and trade numbers above it.
         if dates and trade_numbers:
-            # Remove existing secondary axis if it exists
             if self.chart_sec_ax is not None:
                 self.chart_sec_ax.remove()
-            
+
+            tick_step = max(1, (len(dates) + 9) // 10)
+            date_indices = list(range(0, len(dates), tick_step))
+            if date_indices[-1] != len(dates) - 1:
+                date_indices.append(len(dates) - 1)
+            date_ticks = [trade_numbers[index] for index in date_indices]
+            date_labels = [dates[index] for index in date_indices]
+            self.chart_ax.set_xticks(date_ticks)
+            self.chart_ax.set_xticklabels(date_labels, rotation=45, ha='right', fontsize=8)
+
             sec_ax = self.chart_ax.twiny()
-            sec_ax.set_xlabel("Date")
+            sec_ax.set_xlabel("Trade Number")
             sec_ax.set_xlim(self.chart_ax.get_xlim())
-            sec_ax.set_xticks(trade_numbers)
-            sec_ax.set_xticklabels(dates, rotation=45, ha='left', fontsize=8)
-            # Limit the number of date labels to avoid overcrowding
             from matplotlib.ticker import MaxNLocator
             sec_ax.xaxis.set_major_locator(MaxNLocator(nbins=10, integer=True))
             self.chart_sec_ax = sec_ax
