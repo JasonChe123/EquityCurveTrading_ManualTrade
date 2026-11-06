@@ -65,6 +65,8 @@ class IBConnectionApp(EWrapper, EClient):
         self._atr_period = 14
         self._last_atr = 0.0
         self._last_close = 0.0
+        self._last_high = 0.0
+        self._last_low = 0.0
         self._order_lock = threading.Lock()
 
     def nextValidId(self, orderId: int) -> None:
@@ -102,6 +104,8 @@ class IBConnectionApp(EWrapper, EClient):
         atr = self._average_true_range()
         self._last_atr = atr
         self._last_close = row[4]
+        self._last_high = row[2]
+        self._last_low = row[3]
         # print(
         #     f"{label} {reqId}: {bar.date} O={bar.open} H={bar.high} "
         #     f"L={bar.low} C={bar.close} V={bar.volume} ATR({self._atr_period})={atr:.2f}"
@@ -154,6 +158,14 @@ class IBConnectionApp(EWrapper, EClient):
     @property
     def last_close(self) -> float:
         return self._last_close
+
+    @property
+    def last_high(self) -> float:
+        return self._last_high
+
+    @property
+    def last_low(self) -> float:
+        return self._last_low
 
     @property
     def min_tick(self) -> float | None:
@@ -1231,8 +1243,8 @@ class TradingGUI:
                         row.get('bet', '')
                     ))
 
-    def _check_tp_sl_hits(self, current_price: float) -> list[dict]:
-        """Check if current price hits TP/SL for any open positions."""
+    def _check_tp_sl_hits(self, high_price: float, low_price: float) -> list[dict]:
+        """Check if high or low price hits TP/SL for any open positions."""
         hit_positions = []
         
         for position in self.open_positions:
@@ -1243,15 +1255,15 @@ class TradingGUI:
                 
                 if side == 'BUY':
                     # For BUY: TP is above, SL is below
-                    if current_price >= tp:
+                    if high_price >= tp:
                         hit_positions.append((position, 'TP'))
-                    elif current_price <= sl:
+                    elif low_price <= sl:
                         hit_positions.append((position, 'SL'))
                 elif side == 'SELL':
                     # For SELL: TP is below, SL is above
-                    if current_price <= tp:
+                    if low_price <= tp:
                         hit_positions.append((position, 'TP'))
-                    elif current_price >= sl:
+                    elif high_price >= sl:
                         hit_positions.append((position, 'SL'))
             except (ValueError, TypeError):
                 continue
@@ -1566,6 +1578,8 @@ class TradingGUI:
             self.app._bars = []
             self.app._last_atr = 0.0
             self.app._last_close = 0.0
+            self.app._last_high = 0.0
+            self.app._last_low = 0.0
             
             # Request new contract details and historical data
             print(
@@ -1657,6 +1671,8 @@ class TradingGUI:
         
         atr = self.app.last_atr
         close = self.app.last_close
+        high = self.app.last_high
+        low = self.app.last_low
         try:
             atr_mult = float(self.atr_var.get())
         except ValueError:
@@ -1670,8 +1686,8 @@ class TradingGUI:
             self.atr_display_var.set(f"Last close: {close:.2f}   ATR(14): {atr:.2f}   ATR x mult: {atr * atr_mult:.2f}")
             self.status_var.set("Live")
             
-            # Check if current price hits TP/SL for any open positions
-            hit_positions = self._check_tp_sl_hits(close)
+            # Check if high/low price hits TP/SL for any open positions
+            hit_positions = self._check_tp_sl_hits(high, low)
             for position, result in hit_positions:
                 self._auto_update_position_result(position, result)
         elif not self._ib_connected:
