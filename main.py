@@ -541,6 +541,7 @@ class TradingGUI:
         self.mt5_contract_size_var = tk.StringVar(value="0.1")
         self.atr_var = tk.StringVar(value="10")
         self.reverse_order_var = tk.BooleanVar(value=False)
+        self.reverse_order_lock_var = tk.BooleanVar(value=False)
         self.ib_send_var = tk.BooleanVar(value=False)
         self.mt5_send_var = tk.BooleanVar(value=False)
         self.tradovate_send_var = tk.BooleanVar(value=False)
@@ -584,6 +585,9 @@ class TradingGUI:
         reverse_order_cb = ttk.Checkbutton(main, text="Reverse Order", variable=self.reverse_order_var)
         reverse_order_cb.grid(row=0, column=0, sticky="w")
         self._ui_widgets.append(reverse_order_cb)
+        reverse_order_lock_cb = ttk.Checkbutton(main, text="Reverse Order Lock", variable=self.reverse_order_lock_var)
+        reverse_order_lock_cb.grid(row=0, column=3, sticky="w")
+        self._ui_widgets.append(reverse_order_lock_cb)
         ttk.Label(main, text="ATR Mult").grid(row=0, column=1, sticky="w")
         atr_entry = ttk.Entry(main, textvariable=self.atr_var, width=12)
         atr_entry.grid(row=0, column=2, sticky="w")
@@ -628,7 +632,7 @@ class TradingGUI:
         mt5_contract_size_entry.grid(row=2, column=4, sticky="w")
         self._ui_widgets.append(mt5_contract_size_entry)
 
-        tradovate_send_cb = ttk.Checkbutton(main, text="Send to Tradovate", variable=self.tradovate_send_var)
+        tradovate_send_cb = ttk.Checkbutton(main, text="Send to Tradovate/NinjaTrader", variable=self.tradovate_send_var)
         tradovate_send_cb.grid(row=3, column=0, sticky="w")
         self._ui_widgets.append(tradovate_send_cb)
 
@@ -882,6 +886,10 @@ class TradingGUI:
 
     def _update_reverse_order_checkbox(self) -> None:
         """Update Reverse Order checkbox based on signal vs 5 SMA."""
+        # Skip update if locked
+        if self.reverse_order_lock_var.get():
+            return
+        
         latest_signal, latest_sma_5 = self._get_latest_closed_trade_signal_and_sma()
         
         # Set checkbox: checked if signal < 5 SMA, unchecked if >=
@@ -1702,7 +1710,7 @@ class TradingGUI:
         return last_close - distance_points, last_close + distance_points
 
     def _connect_browser(self) -> None:
-        """Connect to browser (Firefox or Chrome) for tradovate.com automation."""
+        """Connect to browser (Firefox or Chrome) for tradovate.com/ninjatrader.com automation."""
         if not PYWINAUTO_AVAILABLE:
             messagebox.showwarning("Browser Automation", "pywinauto library is not installed. Cannot connect to browser.")
             return
@@ -1773,7 +1781,7 @@ class TradingGUI:
             return
         
         if self.browser_connected:
-            self.reconnect_browser_button.config(text="Tradovate Connected", state="disabled")
+            self.reconnect_browser_button.config(text="Tradovate/NinjaTrader Connected", state="disabled")
         else:
             self.reconnect_browser_button.config(text="Reconnect Browser", state="normal")
 
@@ -1793,16 +1801,17 @@ class TradingGUI:
             return False
 
     def _find_tradovate_tab(self, browser) -> object | None:
-        """Find the tradovate.com tab in browser descendants."""
+        """Find the tradovate.com/ninjatrader.com tab in browser descendants."""
         start = time.time()
         for child in browser.descendants():
-            if hasattr(child, 'window_text') and 'tradovate.com' in child.window_text().lower():
-                print(f"find tradovate tab time: {round(time.time() - start, 2)}")
+            window_text = child.window_text().lower()
+            if (hasattr(child, 'window_text') and ('tradovate.com' in window_text or 'ninjatrader.com' in window_text)):
+                print(f"find tradovate/ninjatrader tab time: {round(time.time() - start, 2)}")
                 return child
         return None
 
     def _send_test_ctrl_b(self) -> None:
-        """Send test Ctrl+B to tradovate.com automatically."""
+        """Send test Ctrl+B to tradovate.com/ninjatrader.com automatically."""
         try:
             browser = self.browser_window
             if browser is None:
@@ -1816,14 +1825,14 @@ class TradingGUI:
             time.sleep(random.random() * 0.2)
             send_keys("{ESC}")
             send_keys("^b")
-            print("Test: Sent Ctrl+B to tradovate.com")
+            print("Test: Sent Ctrl+B to tradovate.com/ninjatrader.com")
         except Exception as e:
             print(f"Failed to send test Ctrl+B: {str(e)}")
 
     def _send_tradovate_shortcut(self, action: str) -> None:
-        """Send keyboard shortcut to tradovate.com browser tab."""
+        """Send keyboard shortcut to tradovate.com/ninjatrader.com browser tab."""
         if not PYWINAUTO_AVAILABLE:
-            messagebox.showwarning("Browser Automation", "pywinauto library is not installed. Cannot send keyboard shortcuts to tradovate.com")
+            messagebox.showwarning("Browser Automation", "pywinauto library is not installed. Cannot send keyboard shortcuts to tradovate.com/ninjatrader.com")
             return
         
         # Check if browser is still connected
@@ -1837,18 +1846,18 @@ class TradingGUI:
                 messagebox.showwarning("Browser Not Connected", "Browser connection is not available. Please click 'Reconnect Browser' button.")
                 return
             
-            # Try to find the tab with tradovate.com - use cached reference if available
+            # Try to find the tab with tradovate.com/ninjatrader.com - use cached reference if available
             tradovate_tab = self._cached_tradovate_tab
             
             # If no cached tab or cached tab is invalid, search for it
             if tradovate_tab is None:
                 tradovate_tab = self._find_tradovate_tab(browser)
                 if tradovate_tab is None:
-                    messagebox.showwarning("Tab Not Found", f"Could not find a tab with tradovate.com in {self.browser_name}")
+                    messagebox.showwarning("Tab Not Found", f"Could not find a tab with tradovate.com/ninjatrader.com in {self.browser_name}")
                     return
                 self._cached_tradovate_tab = tradovate_tab
             
-            # Set focus on the tradovate tab
+            # Set focus on the tradovate/NinjaTrader tab
             try:
                 tradovate_tab.set_focus()
                 time.sleep(random.random()*0.2)
@@ -1858,7 +1867,7 @@ class TradingGUI:
                 self._cached_tradovate_tab = None
                 tradovate_tab = self._find_tradovate_tab(browser)
                 if tradovate_tab is None:
-                    messagebox.showwarning("Tab Not Found", f"Could not find a tab with tradovate.com in {self.browser_name}")
+                    messagebox.showwarning("Tab Not Found", f"Could not find a tab with tradovate.com/ninjatrader.com in {self.browser_name}")
                     return
                 self._cached_tradovate_tab = tradovate_tab
                 
@@ -1870,7 +1879,7 @@ class TradingGUI:
             send_keys("^%b") if action == "BUY" else send_keys("^%s")
 
         except Exception as e:
-            messagebox.showwarning("Browser Automation Error", f"Could not send keyboard shortcut to tradovate.com: {str(e)}")
+            messagebox.showwarning("Browser Automation Error", f"Could not send keyboard shortcut to tradovate.com/ninjatrader.com: {str(e)}")
 
     def _send_order(self, action: str) -> None:
         try:
@@ -1943,7 +1952,7 @@ class TradingGUI:
                 )
                 status.append(f"MT5 #{mt5_order_id} ({actual_action})")
             
-            # Send keyboard shortcut to tradovate.com if checkbox is checked
+            # Send keyboard shortcut to tradovate.com/ninjatrader.com if checkbox is checked
             if self.tradovate_send_var.get():
                 self._send_tradovate_shortcut(actual_action)
             
@@ -1990,7 +1999,7 @@ class TradingGUI:
                 mt5_order_id = self.mt5_app.close_position(mt5_symbol or symbol)
                 status.append(f"MT5 #{mt5_order_id}")
             
-            # Send keyboard shortcut to tradovate.com if checkbox is checked
+            # Send keyboard shortcut to tradovate.com/ninjatrader.com if checkbox is checked
             if self.tradovate_send_var.get():
                 self._send_tradovate_shortcut("CLOSE")
             
